@@ -1,0 +1,10 @@
+{
+  "id": "resource-tracker",
+  "name": "Resource Tracker",
+  "version": "@VERSION@",
+  "author": "BlockDesigner",
+  "description": "The materials a build needs, as the items you'd gather in survival (stacks and shulker boxes), what you have gathered so far and what is left, saved for each project. Copy or export the list as text or CSV.",
+  "updates": "https://github.com/doolecg/BlockDesigner-ResourceTracker",
+  "main": "io.blockdesigner.resources.ResourceTrackerPlugin",
+  "api": 5
+}

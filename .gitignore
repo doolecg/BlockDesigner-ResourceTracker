@@ -1,0 +1,19 @@
+.gradle/
+build/
+out/
+.idea/
+*.iml
+.kotlin/
+local.properties
+
+# AI assistants and coding agents: local config, memory, rules and caches
+.claude/
+CLAUDE.md
+CLAUDE.local.md
+.mcp.json
+.cursor/
+.codex/
+AGENTS.md
+GEMINI.md
+.gemini/
+.aider*
