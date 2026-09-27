@@ -1,3 +1,17 @@
+# Resource Tracker 1.5.1
+
+When Install mod can't replace the old BlockCompanion jar, it now tells you which program is holding it.
+
+**Needs BlockDesigner 0.4.26 or later** (plugin API 7). Update BlockDesigner to 0.4.27 as well: it no longer locks the mods of the game it takes its textures from, which was the usual reason Install mod failed.
+
+## Changed
+- Built against the BlockDesigner 0.4.27 plugin API.
+
+## Fixed
+- **"BlockCompanion jar is in use":** Install mod used to tell you to close the game even when no game was running. If the game is running, it still says so. Otherwise it names the jar and explains that another program has it open, and that BlockDesigner before 0.4.27 held it while taking textures from that game. Update BlockDesigner, or close it and delete the jar by hand.
+
+---
+
 # Resource Tracker 1.5.0
 
 Edit a build from your game: pick **Edit in BlockDesigner** on a placement in BlockCompanion and it opens here as your project, and the game follows your changes.

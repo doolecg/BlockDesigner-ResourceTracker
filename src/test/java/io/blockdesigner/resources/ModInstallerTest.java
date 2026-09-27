@@ -13,6 +13,8 @@ import java.util.zip.ZipEntry;
 import java.util.zip.ZipOutputStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 class ModInstallerTest {
     @TempDir
@@ -119,6 +121,21 @@ class ModInstallerTest {
             assertThat(files.map(p -> p.getFileName().toString())).containsExactly("Other.jar");
         }
         ModInstaller.removeOthers(dir.resolve("nowhere"), null);
+    }
+
+    @Test
+    void aJarHeldOpenSaysWhichItIs() throws Exception {
+        // Windows won't delete or rename a jar a game (or an older BlockDesigner) holds open with ZipFile.
+        assumeTrue(System.getProperty("os.name").startsWith("Windows"));
+        Path mods = Files.createDirectories(dir.resolve("held/mods"));
+        Path old = mods.resolve("blockcompanion-fabric-26.2-0.1.0.jar");
+        zip(old, "fabric.mod.json", "{ \"id\": \"blockcompanion\" }");
+        try (var held = new java.util.zip.ZipFile(old.toFile())) {
+            assertThat(held.size()).isPositive();
+            assertThatThrownBy(() -> ModInstaller.removeOthers(mods, null)).isInstanceOfSatisfying(ModInstaller.InUse.class,
+                    e -> assertThat(e.jar).isEqualTo(old));
+        }
+        assertThat(old).exists();
     }
 
     @Test

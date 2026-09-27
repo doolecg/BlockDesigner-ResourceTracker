@@ -296,9 +296,19 @@ final class ModInstaller {
                 try {
                     Files.move(f, f.resolveSibling(f.getFileName() + ".disabled"), StandardCopyOption.REPLACE_EXISTING);
                 } catch (IOException e2) {
-                    throw new IOException("Close the game first: its BlockCompanion jar is in use", e2);
+                    throw new InUse(f, e2);
                 }
             }
+        }
+    }
+
+    /** An old BlockCompanion jar another program holds open, so it can be neither deleted nor renamed. */
+    static final class InUse extends IOException {
+        final Path jar;
+
+        InUse(Path jar, IOException cause) {
+            super(jar.getFileName() + " is in use: close the game first", cause);
+            this.jar = jar;
         }
     }
 

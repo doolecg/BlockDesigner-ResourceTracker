@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "io.blockdesigner.plugins"
-version = "1.5.0"
+version = "1.5.1"
 
 repositories {
     mavenCentral()
@@ -31,8 +31,8 @@ javafx {
     configuration = "compileOnly"
 }
 
-// The BlockDesigner API this plugin targets (from BlockDesigner 0.4.26).
-val blockDesigner = files("libs/blockdesigner-plugin-api-0.4.26.jar", "libs/blockdesigner-core-0.4.26.jar")
+// The BlockDesigner API this plugin targets (from BlockDesigner 0.4.27).
+val blockDesigner = files("libs/blockdesigner-plugin-api-0.4.27.jar", "libs/blockdesigner-core-0.4.27.jar")
 
 dependencies {
     compileOnly(blockDesigner)

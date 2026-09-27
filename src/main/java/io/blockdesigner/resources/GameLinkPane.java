@@ -336,10 +336,27 @@ final class GameLinkPane {
                 throw new RuntimeException(e.getMessage(), e);
             }
         }).whenComplete((jar, err) -> ctx.runOnUiThread(() -> {
-            if (err != null) banner.show(Tone.DANGER, "Install failed: " + rootMessage(err));
+            if (err != null) banner.show(Tone.DANGER, "Install failed: " + inUse(err).map(u -> inUseMessage(u, gameDir)).orElse(rootMessage(err)));
             else banner.show(Tone.SUCCESS, "Installed " + jar.getFileName() + " in " + label + ". "
                     + (running(gameDir) ? "Close and restart the game to use it." : "Restart the game to use it."));
         }));
+    }
+
+    private static Optional<ModInstaller.InUse> inUse(Throwable t) {
+        for (; t != null; t = t.getCause()) if (t instanceof ModInstaller.InUse u) return Optional.of(u);
+        return Optional.empty();
+    }
+
+    /**
+     * Why the old jar is held: the game while it runs; otherwise another program, such as BlockDesigner before 0.4.27, which
+     * holds the mods of the game it takes its textures from.
+     */
+    private String inUseMessage(ModInstaller.InUse u, Path gameDir) {
+        String jar = u.jar.getFileName().toString();
+        if (running(gameDir)) return "the game is using " + jar + ": close it and install again.";
+        return jar + " is in use by another program: close anything running from that game folder (a game, server or launcher)."
+                + " BlockDesigner before 0.4.27 also holds it while it takes textures from that game: update BlockDesigner, or close it"
+                + " and delete " + jar + " by hand.";
     }
 
     /** What a folder picked by hand runs, by its launcher files or its mods, and the newest release. */
