@@ -23,9 +23,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
+import java.util.function.Predicate;
 
 /**
- * The live link to BlockCompanion games and servers on this computer: which ones exist (active or disconnected), a
+ * The live link to BlockCompanion games and servers on this computer: which ones exist (running, or saved to stay listed), a
  * connection to each active one, which ones projects go to, sending the open project (on request, on the game's Grab
  * button, and after every change while Live is on), and what the games report (their placements and linked chests).
  * JavaFX thread only, except {@link #scanFolder()}.
@@ -91,10 +92,17 @@ final class GameLinks {
         return GameInstance.scan(folder, Instant.now());
     }
 
-    /** A new look at the folder: connects to active games that aren't connected yet. */
+    /**
+     * A new look at the folder: connects to active games that aren't connected yet, and lists the running and connected
+     * games plus the saved ones; a disconnected game that isn't saved drops out of the list.
+     */
     void scanned(List<GameInstance> list) {
-        instances = List.copyOf(list);
         Instant now = Instant.now();
+        if (refreshSaved(list)) prefs.save();
+        instances = visible(list, prefs.saved, g -> {
+            GameConnection c = connections.get(g.id());
+            return c != null && c.state() != GameConnection.State.CLOSED;
+        }, now);
         long ms = System.currentTimeMillis();
         for (GameInstance g : instances) {
             GameConnection c = connections.get(g.id());
@@ -134,6 +142,55 @@ final class GameLinks {
 
     List<GameInstance> instances() {
         return instances;
+    }
+
+    /**
+     * What the list shows: games running now or still connected, then saved games that aren't (their newest instance
+     * file, or how they were last seen). One row per game ({@link #key}); the most recently updated first.
+     */
+    static List<GameInstance> visible(List<GameInstance> scanned, Map<String, GameInstance> saved, Predicate<GameInstance> connected, Instant now) {
+        Map<String, GameInstance> out = new LinkedHashMap<>();
+        for (GameInstance g : scanned) {
+            if (g.active(now) || connected.test(g)) out.putIfAbsent(key(g), g);
+        }
+        for (GameInstance g : scanned) {
+            if (saved.containsKey(key(g))) out.putIfAbsent(key(g), g);
+        }
+        for (Map.Entry<String, GameInstance> e : saved.entrySet()) out.putIfAbsent(e.getKey(), e.getValue());
+        List<GameInstance> list = new ArrayList<>(out.values());
+        list.sort((a, b) -> b.updated().compareTo(a.updated()));
+        return List.copyOf(list);
+    }
+
+    /** Keeps each saved game's record up to date with its newest instance file; true if one changed. */
+    private boolean refreshSaved(List<GameInstance> scanned) {
+        boolean changed = false;
+        for (GameInstance g : scanned) {
+            GameInstance s = prefs.saved.get(key(g));
+            if (s == null || !g.updated().isAfter(s.updated())) continue;
+            if (!sameSaved(s, g)) changed = true;
+            prefs.saved.put(key(g), g);
+        }
+        return changed;
+    }
+
+    /** Equal in what {@link Prefs} keeps of a saved game, apart from when it was seen. */
+    private static boolean sameSaved(GameInstance a, GameInstance b) {
+        return a.world().equals(b.world()) && a.minecraft().equals(b.minecraft()) && a.loader().equals(b.loader())
+                && a.modVersion().equals(b.modVersion()) && a.clientPacks().equals(b.clientPacks()) && a.serverPacks().equals(b.serverPacks());
+    }
+
+    /** Whether the game stays in the list when it disconnects. */
+    boolean saved(GameInstance g) {
+        return prefs.saved.containsKey(key(g));
+    }
+
+    void setSaved(GameInstance g, boolean on) {
+        if (on == saved(g)) return;
+        if (on) prefs.saved.put(key(g), g);
+        else prefs.saved.remove(key(g));
+        prefs.save();
+        scanned(scanFolder());
     }
 
     /** True while connected to the game. */

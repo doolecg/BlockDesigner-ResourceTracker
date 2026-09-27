@@ -78,9 +78,9 @@ The page's button shows how many kinds are left to gather.
 
 Everything to do with the [BlockCompanion](https://github.com/doolecg/BlockCompanion) mod (0.1.0 or later), from top to bottom:
 
-- **Games:** every BlockCompanion game and server on this computer: **active** (green) while it runs, **disconnected** (grey)
-  for a day or two after it closes, with its version, loader, what it shows and whether it is connected. Resource Tracker
-  connects to active ones by itself. Tick the games your project goes to. The refresh button looks for games again,
+- **Games:** every BlockCompanion game and server running on this computer, with its version, loader, what it shows and
+  whether it is connected. Resource Tracker connects to them by itself. A game leaves the list when it disconnects, unless
+  you **save** it (the save button on its row): saved games stay, **disconnected** (grey), until you unsave them. Tick the games your project goes to. The refresh button looks for games again,
   re-reads what they report and counts again; **Use its textures** shows blocks with the resource packs of the game selected in the list, and its server's pack
   (needs BlockDesigner 0.4.24 or later).
 - **Send project:** **Send to game** sends the project to the ticked games. It appears in front of you in the game; a server
@@ -93,7 +93,7 @@ Everything to do with the [BlockCompanion](https://github.com/doolecg/BlockCompa
   with how many are active and disconnected, and what the last install did. A dot in the same colour is on the page's
   button, even before you open the page.
 
-Live and the ticks are saved. **Grab from the game:** BlockCompanion's **Grab from BD** button asks for the open project;
+Live, the ticks and the saved games are kept. **Grab from the game:** BlockCompanion's **Grab from BD** button asks for the open project;
 Resource Tracker answers even while the panel is closed.
 
 #### Game progress
@@ -121,8 +121,11 @@ page says how many are in chests.
 #### Install mod…
 
 Puts the latest BlockCompanion release into a game's `mods` folder (a Paper server's `plugins`), the jar for its loader and
-Minecraft version, and removes older BlockCompanion jars there. Pick a game from the list or another game folder. Restart
-the game afterwards.
+Minecraft version, and removes older BlockCompanion jars there. The first choice is the game BlockDesigner takes its textures
+from (**Settings › Minecraft assets**): the launcher instance picked there (Prism, MultiMC, CurseForge or Modrinth), else the
+game folder of the loaded resource packs, else the official launcher's `.minecraft`, with the game jar's Minecraft version.
+If its loader can't be told from the instance or its mods, you're asked Fabric or NeoForge. Or pick a game from the list,
+or another game folder (the jar for the textures' version is picked first there). Restart the game afterwards.
 
 The games are found through small files in `<your user folder>\.blockcompanion\instances`, and the connection only
 listens on this computer.

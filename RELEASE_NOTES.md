@@ -1,3 +1,19 @@
+# Resource Tracker 1.4.0
+
+The BlockCompanion page's game list now only shows games that are running, plus the ones you save, and Install mod goes straight to the game BlockDesigner takes its textures from.
+
+**Needs BlockDesigner 0.4.24 or later** (plugin API 6). Older BlockDesigners keep 1.2.0 until BlockDesigner itself is updated.
+
+## New
+- **Save a game:** the save button on a game's row keeps it in the list after it disconnects, so you can tick it, see its version and use its textures while it's closed. Saved games are remembered between runs; press the button again to let it go.
+- **Install mod… offers your textures game first:** the game BlockDesigner takes its textures from (**Settings › Minecraft assets**) is the first choice, with its Minecraft version and loader. That's the launcher instance picked there (Prism, MultiMC, CurseForge or Modrinth), or else the game folder of your resource packs, or the official launcher's `.minecraft`. If its loader can't be told, you're asked Fabric or NeoForge.
+
+## Changed
+- **Games leave the list when they disconnect** unless saved, instead of staying for two days.
+- **Another game folder…** picks the jar for your textures' Minecraft version first.
+
+---
+
 # Resource Tracker 1.3.0
 
 Materials and BlockCompanion are now two pages of Resource Tracker's tab, with a status dot for the link to your game, and a cleaner layout on both.

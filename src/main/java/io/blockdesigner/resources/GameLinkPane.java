@@ -38,11 +38,12 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 
 /**
  * The BlockCompanion page: every BlockCompanion game and server on this computer, each with a box for whether projects
- * go there and how it stands; Send to game and Live (send after every change); the build in the game this project is
+ * go there, how it stands and whether it stays listed when it disconnects (saved); Send to game and Live (send after every change); the build in the game this project is
  * linked to (Game progress) and the linked chests; installing the mod. At the bottom: how the link stands and what the
  * last install did.
  */
@@ -84,8 +85,8 @@ final class GameLinkPane {
         // Games.
         Button install = Controls.button("Install mod…", "Put the latest BlockCompanion into a game's mods folder (or a Paper server's plugins)",
                 this::install);
-        list = new ItemList<GameInstance>().empty(new EmptyState(Icon.LINK, "No BlockCompanion game found.")
-                .hint("Install the mod, then start Minecraft.")
+        list = new ItemList<GameInstance>().empty(new EmptyState(Icon.LINK, "No BlockCompanion game running.")
+                .hint("Start Minecraft with the mod, or install it. Saved games stay here when they disconnect.")
                 .action(Controls.button("Install mod…", "Put the latest BlockCompanion into a game's mods folder", this::install)));
         list.setItems(items);
         list.setCellFactory(v -> new Cell());
@@ -93,7 +94,8 @@ final class GameLinkPane {
         textures = Controls.button("Use its textures", "Show blocks here with the selected game's resource packs (its own and its server's)",
                 this::useTextures);
         Section games = new Section("Games", list,
-                Controls.hint("Tick the games your project goes to. Active games connect by themselves."), textures)
+                Controls.hint("Tick the games your project goes to. Running games connect by themselves; a game leaves the list when it"
+                        + " disconnects unless you save it."), textures)
                 .actions(Controls.iconButton(Icon.REFRESH, "Look for games again, ask them for their progress and chests, and count the materials again",
                         session::refreshAll));
 
@@ -127,7 +129,8 @@ final class GameLinkPane {
 
         // The mod.
         Section mod = new Section("BlockCompanion mod", install,
-                Controls.hint("The latest BlockCompanion for the game's loader and Minecraft version. Restart the game afterwards."));
+                Controls.hint("The latest BlockCompanion for the game's loader and Minecraft version. It offers the game BlockDesigner"
+                        + " takes its textures from first (Settings › Minecraft assets). Restart the game afterwards."));
 
         // How the link stands, at the bottom.
         banner = new Banner();
@@ -231,9 +234,12 @@ final class GameLinkPane {
 
     private void install() {
         Map<String, Target> targets = new LinkedHashMap<>();
+        Optional<TextureGame> tex = TextureGame.find(ctx.resourcePacks());
+        tex.filter(t -> t.gameDir() != null).ifPresent(t -> targets.put(targetKey(t.gameDir(), t.loader(), t.minecraft()),
+                new Target("Textures: " + t.label() + " (" + t.platform() + ")", t.gameDir(), t.loader(), t.minecraft())));
         for (GameInstance g : links.instances()) {
             if (g.gameDir().isBlank()) continue;
-            String k = g.gameDir() + "|" + g.loader() + "|" + g.minecraft();
+            String k = targetKey(Path.of(g.gameDir()), g.loader(), g.minecraft());
             targets.putIfAbsent(k, new Target((g.server() ? "Server: " : "") + g.label() + " (" + g.platform() + ")", Path.of(g.gameDir()),
                     g.loader(), g.minecraft()));
         }
@@ -241,9 +247,22 @@ final class GameLinkPane {
         List<Target> choices = new ArrayList<>(targets.values());
         choices.add(other);
         ctx.ui().choose("Install BlockCompanion", "Which game gets the latest BlockCompanion?", choices, choices.getFirst()).ifPresent(t -> {
-            if (t == other) installByHand();
+            if (t == other) installByHand(tex.map(TextureGame::minecraft).orElse(""));
+            else if (t.loader().isBlank()) chooseLoader(t.label()).ifPresent(l -> installInto(t.gameDir(), l, t.minecraft(), t.label()));
             else installInto(t.gameDir(), t.loader(), t.minecraft(), t.label());
         });
+    }
+
+    /** One install target per folder, loader and version, however the folder is spelt. */
+    private static String targetKey(Path dir, String loader, String minecraft) {
+        return (dir.toAbsolutePath().normalize() + "|" + loader + "|" + minecraft).toLowerCase(java.util.Locale.ROOT);
+    }
+
+    /** Asks which loader a game runs when its mods don't tell. */
+    private Optional<String> chooseLoader(String label) {
+        List<String> loaders = List.of("Fabric", "NeoForge");
+        return ctx.ui().choose("Install BlockCompanion", "Which loader does " + label + " run?", loaders, loaders.getFirst())
+                .map(l -> l.toLowerCase(java.util.Locale.ROOT));
     }
 
     private void installInto(Path gameDir, String loader, String minecraft, String label) {
@@ -263,7 +282,8 @@ final class GameLinkPane {
         }));
     }
 
-    private void installByHand() {
+    /** {@code minecraft}: the version BlockDesigner's textures come from, picked first when there is a jar for it. */
+    private void installByHand(String minecraft) {
         DirectoryChooser dc = new DirectoryChooser();
         dc.setTitle("The game folder (the one with mods in it)");
         var dir = dc.showDialog(ctx.ui().owner());
@@ -287,7 +307,8 @@ final class GameLinkPane {
                 return;
             }
             List<String> names = jars.stream().map(ModInstaller.Asset::name).toList();
-            ctx.ui().choose("Install BlockCompanion " + r.tag(), "Which one? Pick the loader and Minecraft version of that game.", names, names.getFirst())
+            String first = names.stream().filter(n -> !minecraft.isBlank() && n.contains("-" + minecraft + "-")).findFirst().orElse(names.getFirst());
+            ctx.ui().choose("Install BlockCompanion " + r.tag(), "Which one? Pick the loader and Minecraft version of that game.", names, first)
                     .flatMap(n -> jars.stream().filter(a -> a.name().equals(n)).findFirst()).ifPresent(a -> {
                         String loader = a.name().startsWith("blockcompanion-paper-") ? "paper" : "fabric";
                         Path folder = ModInstaller.folder(dir.toPath(), loader);
@@ -348,6 +369,7 @@ final class GameLinkPane {
         private final CheckBox target = new CheckBox();
         private final Label name = new Label(), meta = new Label();
         private final StatusBadge badge = new StatusBadge(Tone.NEUTRAL, "");
+        private final ToggleButton save = new ToggleButton(null, Icon.SAVE.node(16));
         private final HBox root;
         private GameInstance bound;
 
@@ -367,7 +389,13 @@ final class GameLinkPane {
                 if (bound != null && b != links.target(bound)) links.setTarget(bound, b);
             });
             badge.setMinWidth(javafx.scene.layout.Region.USE_PREF_SIZE);
-            root = new HBox(Theme.SM, target, text, badge);
+            save.getStyleClass().addAll("flat", "bd-icon-button");
+            save.setTooltip(new Tooltip("Save: keep this game in the list when it disconnects"));
+            save.setAccessibleText("Keep this game in the list when it disconnects");
+            save.selectedProperty().addListener((o, a, b) -> {
+                if (bound != null && b != links.saved(bound)) links.setSaved(bound, b);
+            });
+            root = new HBox(Theme.SM, target, text, badge, save);
             root.setAlignment(Pos.CENTER_LEFT);
             root.setMinWidth(0);
             setPrefWidth(0);
@@ -385,6 +413,7 @@ final class GameLinkPane {
             }
             boolean active = g.active(Instant.now()), connected = links.connected(g);
             target.setSelected(links.target(g));
+            save.setSelected(links.saved(g));
             badge.set(connected ? Tone.SUCCESS : active ? Tone.WARNING : Tone.NEUTRAL, connected ? "Connected" : active ? "Connecting…" : "Disconnected");
             name.setText((g.server() ? "Server · " : "") + g.label());
             meta.setText(g.platform() + details(g));
