@@ -1,3 +1,14 @@
+# Resource Tracker 1.0.1
+
+Kept up to date with BlockDesigner 0.4.22: built and tested against its plugin API. Nothing changes in how it works.
+
+**Needs BlockDesigner 0.4.17 or later** (plugin API 5).
+
+## Changed
+- Built against the BlockDesigner 0.4.22 plugin API.
+
+---
+
 # Resource Tracker 1.0.0
 
 The first release: what a build needs, as the items you'd gather in survival, what you've gathered and what's left. It replaces the "Coming soon" Resource Tracker tab BlockDesigner used to have.
