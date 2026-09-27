@@ -120,12 +120,15 @@ page says how many are in chests.
 
 #### Install mod…
 
-Puts the latest BlockCompanion release into a game's `mods` folder (a Paper server's `plugins`), the jar for its loader and
-Minecraft version, and removes older BlockCompanion jars there. The first choice is the game BlockDesigner takes its textures
-from (**Settings › Minecraft assets**): the launcher instance picked there (Prism, MultiMC, CurseForge or Modrinth), else the
-game folder of the loaded resource packs, else the official launcher's `.minecraft`, with the game jar's Minecraft version.
-If its loader can't be told from the instance or its mods, you're asked Fabric or NeoForge. Or pick a game from the list,
-or another game folder (the jar for the textures' version is picked first there). Restart the game afterwards.
+Puts the newest BlockCompanion release (the highest version on GitHub, not prereleases) into a game's `mods` folder (a
+Paper server's `plugins`): the jar for its loader and Minecraft version, or for its line (the 26.2 jar for 26.2.1). Older
+BlockCompanion jars there go first, found by name or by mod id; if the game holds one open it's renamed to `.disabled`,
+else you're asked to close the game. The first choice is the game BlockDesigner takes its textures from (**Settings ›
+Minecraft assets**): the launcher instance picked there (Prism, MultiMC, CurseForge or Modrinth), else the game folder of
+the loaded resource packs, else the official launcher's `.minecraft`. Without an instance, the version is the one a game
+reported from that folder, else the game jar's, marked with **?** to check. If the loader can't be told, you're asked,
+among the loaders that version has a jar for. Or pick a game from the list, or another game folder (or its `mods`
+folder): the jar for what it runs is picked when its launcher files or mods tell. Restart the game afterwards.
 
 The games are found through small files in `<your user folder>\.blockcompanion\instances`, and the connection only
 listens on this computer.

@@ -1,3 +1,23 @@
+# Resource Tracker 1.4.1
+
+Install mod now always gets the newest BlockCompanion from GitHub, picks the right jar for your game, and never leaves an old copy behind. The games list is taller.
+
+**Needs BlockDesigner 0.4.24 or later** (plugin API 6). Older BlockDesigners keep 1.2.0 until BlockDesigner itself is updated.
+
+## Changed
+- **The newest BlockCompanion release:** Install mod takes the newest full release on GitHub (BlockCompanion 0.2.0 today), skipping drafts and pre-releases.
+- **The right jar:** a game on a newer patch of a Minecraft version gets that line's jar (26.3.1 gets the 26.3 jar). You're only asked for the loader when the release has more than one for that version, so 26.2 installs Fabric straight away.
+- **Install by hand:** you can pick the game folder or its `mods` folder. The game's Minecraft version and loader are read from the folder, and its jar is picked for you when they're known.
+- **Your textures game:** a version that's only a guess shows a **?** (for example "26.2 Fabric?"), and a game BlockCompanion has seen in that folder gives its real version instead.
+- **The games list is taller:** it shows at least three games and up to six before it scrolls.
+
+## Fixed
+- **Old BlockCompanion jars are always removed,** also when renamed, and a Paper server's `plugins/update` copy. If the game is running and holds the old jar, it's disabled, or you're told to close the game first. Two copies never stay behind.
+- **Clearer errors:** "GitHub's rate limit is reached; try again at 14:05" instead of "GitHub answered 403", and a missing jar says what the release does have ("no NeoForge jar for 26.2; it has Fabric for 26.2").
+- Picking a `mods` folder by hand no longer installs into `mods/mods`.
+
+---
+
 # Resource Tracker 1.4.0
 
 The BlockCompanion page's game list now only shows games that are running, plus the ones you save, and Install mod goes straight to the game BlockDesigner takes its textures from.

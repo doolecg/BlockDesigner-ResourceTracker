@@ -90,7 +90,7 @@ final class GameLinkPane {
                 .action(Controls.button("Install mod…", "Put the latest BlockCompanion into a game's mods folder", this::install)));
         list.setItems(items);
         list.setCellFactory(v -> new Cell());
-        list.visibleRows(1, 4);
+        list.visibleRows(3, 6);
         textures = Controls.button("Use its textures", "Show blocks here with the selected game's resource packs (its own and its server's)",
                 this::useTextures);
         Section games = new Section("Games", list,
@@ -235,8 +235,13 @@ final class GameLinkPane {
     private void install() {
         Map<String, Target> targets = new LinkedHashMap<>();
         Optional<TextureGame> tex = TextureGame.find(ctx.resourcePacks());
-        tex.filter(t -> t.gameDir() != null).ifPresent(t -> targets.put(targetKey(t.gameDir(), t.loader(), t.minecraft()),
-                new Target("Textures: " + t.label() + " (" + t.platform() + ")", t.gameDir(), t.loader(), t.minecraft())));
+        tex.filter(t -> t.gameDir() != null).ifPresent(t -> {
+            // The game jar's version is a guess for that folder: a game seen there says what it runs.
+            Optional<GameInstance> seen = t.guessed() ? seenIn(t.gameDir()) : Optional.empty();
+            String mc = seen.map(GameInstance::minecraft).orElse(t.minecraft()), loader = seen.map(GameInstance::loader).orElse(t.loader());
+            targets.put(targetKey(t.gameDir(), loader, mc), new Target("Textures: " + t.label() + " (" + seen.map(GameInstance::platform)
+                    .orElse(t.platform()) + ")", t.gameDir(), loader, mc));
+        });
         for (GameInstance g : links.instances()) {
             if (g.gameDir().isBlank()) continue;
             String k = targetKey(Path.of(g.gameDir()), g.loader(), g.minecraft());
@@ -246,11 +251,28 @@ final class GameLinkPane {
         Target other = new Target("Another game folder…", null, "", "");
         List<Target> choices = new ArrayList<>(targets.values());
         choices.add(other);
-        ctx.ui().choose("Install BlockCompanion", "Which game gets the latest BlockCompanion?", choices, choices.getFirst()).ifPresent(t -> {
-            if (t == other) installByHand(tex.map(TextureGame::minecraft).orElse(""));
-            else if (t.loader().isBlank()) chooseLoader(t.label()).ifPresent(l -> installInto(t.gameDir(), l, t.minecraft(), t.label()));
+        boolean guess = choices.stream().anyMatch(t -> t.label().endsWith("?)"));
+        ctx.ui().choose("Install BlockCompanion", "Which game gets the latest BlockCompanion?"
+                        + (guess ? " A ? marks a guessed version: check that game runs it." : ""), choices, choices.getFirst()).ifPresent(t -> {
+            if (t == other) installByHand();
             else installInto(t.gameDir(), t.loader(), t.minecraft(), t.label());
         });
+    }
+
+    /** The game BlockCompanion last saw in that folder, running ones first; not servers, and only when it says its version. */
+    private Optional<GameInstance> seenIn(Path dir) {
+        String d = targetKey(dir, "", "");
+        Instant now = Instant.now();
+        return links.instances().stream().filter(g -> !g.server() && !g.gameDir().isBlank() && !g.minecraft().isBlank()
+                        && targetKey(Path.of(g.gameDir()), "", "").equals(d))
+                .min((a, b) -> Boolean.compare(b.active(now), a.active(now)));
+    }
+
+    /** Whether a game BlockCompanion sees in that folder is running now. */
+    private boolean running(Path dir) {
+        String d = targetKey(dir, "", "");
+        return links.instances().stream().anyMatch(g -> !g.gameDir().isBlank() && g.active(Instant.now())
+                && targetKey(Path.of(g.gameDir()), "", "").equals(d));
     }
 
     /** One install target per folder, loader and version, however the folder is spelt. */
@@ -258,72 +280,107 @@ final class GameLinkPane {
         return (dir.toAbsolutePath().normalize() + "|" + loader + "|" + minecraft).toLowerCase(java.util.Locale.ROOT);
     }
 
-    /** Asks which loader a game runs when its mods don't tell. */
-    private Optional<String> chooseLoader(String label) {
-        List<String> loaders = List.of("Fabric", "NeoForge");
-        return ctx.ui().choose("Install BlockCompanion", "Which loader does " + label + " run?", loaders, loaders.getFirst())
-                .map(l -> l.toLowerCase(java.util.Locale.ROOT));
-    }
-
-    private void installInto(Path gameDir, String loader, String minecraft, String label) {
+    /** The newest release, looked up in the background. */
+    private CompletableFuture<ModInstaller.Release> lookUp() {
         ctx.status("Resource Tracker: looking up the latest BlockCompanion…");
-        CompletableFuture.supplyAsync(() -> {
-            try {
-                ModInstaller.Release r = ModInstaller.latest();
-                ModInstaller.Asset a = ModInstaller.pick(r, loader, minecraft).orElseThrow(() -> new IOException(
-                        "BlockCompanion " + r.tag() + " has no jar for " + minecraft + " " + loader));
-                return ModInstaller.install(a, ModInstaller.folder(gameDir, loader));
-            } catch (IOException e) {
-                throw new RuntimeException(e.getMessage(), e);
-            }
-        }).whenComplete((jar, err) -> ctx.runOnUiThread(() -> {
-            if (err != null) banner.show(Tone.DANGER, "Install failed: " + rootMessage(err));
-            else banner.show(Tone.SUCCESS, "Installed " + jar.getFileName() + " in " + label + ". Restart the game to use it.");
-        }));
-    }
-
-    /** {@code minecraft}: the version BlockDesigner's textures come from, picked first when there is a jar for it. */
-    private void installByHand(String minecraft) {
-        DirectoryChooser dc = new DirectoryChooser();
-        dc.setTitle("The game folder (the one with mods in it)");
-        var dir = dc.showDialog(ctx.ui().owner());
-        if (dir == null) return;
-        ctx.status("Resource Tracker: looking up the latest BlockCompanion…");
-        CompletableFuture.supplyAsync(() -> {
+        return CompletableFuture.supplyAsync(() -> {
             try {
                 return ModInstaller.latest();
             } catch (IOException e) {
                 throw new RuntimeException(e.getMessage(), e);
             }
-        }).whenComplete((r, err) -> ctx.runOnUiThread(() -> {
+        });
+    }
+
+    /**
+     * Asks which loader a game runs when its mods don't tell, offering only the loaders the release has a jar for at that
+     * version; no question when there's one.
+     */
+    private Optional<String> chooseLoader(ModInstaller.Release r, String minecraft, String label) {
+        List<String> loaders = ModInstaller.loaders(r, minecraft).stream().map(ModInstaller::loaderLabel).toList();
+        if (loaders.isEmpty()) {
+            banner.show(Tone.DANGER, "Install failed: " + ModInstaller.missing(r, "", minecraft));
+            return Optional.empty();
+        }
+        Optional<String> l = loaders.size() == 1 ? Optional.of(loaders.getFirst())
+                : ctx.ui().choose("Install BlockCompanion", "Which loader does " + label + " run?", loaders, loaders.getFirst());
+        return l.map(s -> s.toLowerCase(java.util.Locale.ROOT));
+    }
+
+    private void installInto(Path gameDir, String loader, String minecraft, String label) {
+        lookUp().whenComplete((r, err) -> ctx.runOnUiThread(() -> {
             if (err != null) {
                 banner.show(Tone.DANGER, "Install failed: " + rootMessage(err));
                 return;
             }
-            List<ModInstaller.Asset> jars = r.assets().stream().filter(a -> a.name().endsWith(".jar") && a.name().startsWith("blockcompanion-")
-                    && !a.name().contains("-sources")).toList();
-            if (jars.isEmpty()) {
-                banner.show(Tone.DANGER, "BlockCompanion " + r.tag() + " has no jars");
-                return;
-            }
-            List<String> names = jars.stream().map(ModInstaller.Asset::name).toList();
-            String first = names.stream().filter(n -> !minecraft.isBlank() && n.contains("-" + minecraft + "-")).findFirst().orElse(names.getFirst());
-            ctx.ui().choose("Install BlockCompanion " + r.tag(), "Which one? Pick the loader and Minecraft version of that game.", names, first)
-                    .flatMap(n -> jars.stream().filter(a -> a.name().equals(n)).findFirst()).ifPresent(a -> {
-                        String loader = a.name().startsWith("blockcompanion-paper-") ? "paper" : "fabric";
-                        Path folder = ModInstaller.folder(dir.toPath(), loader);
-                        CompletableFuture.supplyAsync(() -> {
-                            try {
-                                return ModInstaller.install(a, folder);
-                            } catch (IOException e) {
-                                throw new RuntimeException(e.getMessage(), e);
-                            }
-                        }).whenComplete((jar, e2) -> ctx.runOnUiThread(() -> {
-                            if (e2 != null) banner.show(Tone.DANGER, "Install failed: " + rootMessage(e2));
-                            else banner.show(Tone.SUCCESS, "Installed " + jar.getFileName() + " in " + folder + ". Restart the game to use it.");
-                        }));
-                    });
+            (loader.isBlank() ? chooseLoader(r, minecraft, label) : Optional.of(loader)).ifPresent(l -> {
+                Optional<ModInstaller.Asset> a = ModInstaller.pick(r, l, minecraft);
+                if (a.isEmpty()) banner.show(Tone.DANGER, "Install failed: " + ModInstaller.missing(r, l, minecraft));
+                else download(a.get(), ModInstaller.folder(gameDir, l), gameDir, label);
+            });
         }));
+    }
+
+    /** Puts the jar in the folder in the background and says how it went. */
+    private void download(ModInstaller.Asset a, Path folder, Path gameDir, String label) {
+        ctx.status("Resource Tracker: installing " + a.name() + "…");
+        CompletableFuture.supplyAsync(() -> {
+            try {
+                return ModInstaller.install(a, folder);
+            } catch (IOException e) {
+                throw new RuntimeException(e.getMessage(), e);
+            }
+        }).whenComplete((jar, err) -> ctx.runOnUiThread(() -> {
+            if (err != null) banner.show(Tone.DANGER, "Install failed: " + rootMessage(err));
+            else banner.show(Tone.SUCCESS, "Installed " + jar.getFileName() + " in " + label + ". "
+                    + (running(gameDir) ? "Close and restart the game to use it." : "Restart the game to use it."));
+        }));
+    }
+
+    /** What a folder picked by hand runs, by its launcher files or its mods, and the newest release. */
+    private record ByHand(ModInstaller.Release release, TextureGame game) {
+    }
+
+    /** A game folder (or its mods or plugins folder) picked by hand; the jar for what it runs is picked first when that shows. */
+    private void installByHand() {
+        DirectoryChooser dc = new DirectoryChooser();
+        dc.setTitle("The game folder (or its mods folder)");
+        var dir = dc.showDialog(ctx.ui().owner());
+        if (dir == null) return;
+        Path chosen = dir.toPath(), gameDir = ModInstaller.gameFolder(chosen);
+        Optional<GameInstance> seen = seenIn(gameDir);
+        Path appData = Path.of(System.getenv().getOrDefault("APPDATA", System.getProperty("user.home")));
+        lookUp().thenCombine(CompletableFuture.supplyAsync(() -> TextureGame.at(gameDir, appData)), ByHand::new)
+                .whenComplete((h, err) -> ctx.runOnUiThread(() -> {
+                    if (err != null) {
+                        banner.show(Tone.DANGER, "Install failed: " + rootMessage(err));
+                        return;
+                    }
+                    chooseJar(h.release(), chosen, gameDir, seen.map(GameInstance::minecraft).orElse(h.game().minecraft()),
+                            seen.map(GameInstance::loader).filter(l -> !l.isBlank()).orElse(h.game().loader()));
+                }));
+    }
+
+    /** Asks which jar goes into a folder picked by hand; the one for {@code minecraft} and {@code loader} first when they're known. */
+    private void chooseJar(ModInstaller.Release r, Path chosen, Path gameDir, String minecraft, String loader) {
+        List<ModInstaller.Jar> jars = ModInstaller.jars(r);
+        if (jars.isEmpty()) {
+            banner.show(Tone.DANGER, "Install failed: BlockCompanion " + r.tag() + " has no jars");
+            return;
+        }
+        String l = loader.isEmpty() && ModInstaller.isModsFolder(chosen) && chosen.getFileName().toString().equalsIgnoreCase("plugins") ? "paper" : loader;
+        // Only what the folder shows: no jar is picked for a version or loader it doesn't tell.
+        Optional<ModInstaller.Asset> match = l.isEmpty() || minecraft.isEmpty() && !l.equals("paper") ? Optional.empty()
+                : ModInstaller.pick(r, l, minecraft);
+        String text = match.isPresent() ? "That game runs " + (minecraft + " " + ModInstaller.loaderLabel(l)).strip() + ": its jar is picked."
+                : "Pick the loader and Minecraft version of that game.";
+        List<String> names = jars.stream().map(j -> j.asset().name()).toList();
+        ctx.ui().choose("Install BlockCompanion " + r.tag(), text, names, match.map(ModInstaller.Asset::name).orElse(null))
+                .flatMap(n -> jars.stream().filter(j -> j.asset().name().equals(n)).findFirst())
+                .ifPresent(j -> {
+                    Path folder = ModInstaller.folderByHand(chosen, j.loader());
+                    download(j.asset(), folder, gameDir, folder.toString());
+                });
     }
 
     private static String rootMessage(Throwable t) {

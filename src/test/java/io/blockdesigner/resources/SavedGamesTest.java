@@ -83,6 +83,7 @@ class SavedGamesTest {
         assertThat(t.loader()).isEqualTo("neoforge");
         assertThat(t.gameDir()).isEqualTo(inst.resolve("minecraft"));
         assertThat(t.platform()).isEqualTo("1.21.1 NeoForge");
+        assertThat(t.guessed()).isFalse();
     }
 
     @Test
@@ -96,10 +97,13 @@ class SavedGamesTest {
         assertThat(fromPack.label()).isEqualTo("MyGame");
         assertThat(fromPack.minecraft()).isEqualTo("26.2");
         assertThat(fromPack.loader()).isEmpty();
+        assertThat(fromPack.guessed()).isTrue();
+        assertThat(fromPack.platform()).isEqualTo("26.2?");
 
         TextureGame vanilla = TextureGame.of(settings, List.of(), appData, home).orElseThrow();
         assertThat(vanilla.gameDir()).isEqualTo(appData.resolve(".minecraft"));
         assertThat(vanilla.label()).isEqualTo("Minecraft Launcher");
+        assertThat(vanilla.guessed()).isTrue();
     }
 
     @Test

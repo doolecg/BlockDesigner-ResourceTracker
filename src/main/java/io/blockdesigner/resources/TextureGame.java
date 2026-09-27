@@ -22,8 +22,9 @@ import java.util.zip.ZipFile;
  *
  * @param gameDir null when no game folder goes with the jar
  * @param loader  "fabric", "neoforge", or "" when it can't be told
+ * @param guessed the version is the game jar's, which that game may not run (no launcher instance says)
  */
-record TextureGame(String label, String minecraft, Path gameDir, String loader) {
+record TextureGame(String label, String minecraft, Path gameDir, String loader, boolean guessed) {
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Pattern VERSION = Pattern.compile("(\\d+\\.\\d+(?:\\.\\d+)?)");
 
@@ -52,66 +53,109 @@ record TextureGame(String label, String minecraft, Path gameDir, String loader) 
             Optional<TextureGame> inst = instance(instance, appData, home);
             if (inst.isPresent()) {
                 TextureGame t = inst.get();
-                return Optional.of(t.minecraft().isEmpty() ? new TextureGame(t.label(), mc, t.gameDir(), t.loader()) : t);
+                return Optional.of(t.minecraft().isEmpty() ? new TextureGame(t.label(), mc, t.gameDir(), t.loader(), true) : t);
             }
         }
         for (Path p : packs) {
             Path dir = p.toAbsolutePath().getParent();
             if (dir != null && dir.getFileName() != null && dir.getFileName().toString().equalsIgnoreCase("resourcepacks") && dir.getParent() != null) {
                 Path game = dir.getParent();
-                return Optional.of(new TextureGame(name(game, appData), mc, game, loaderFromMods(game)));
+                return Optional.of(new TextureGame(name(game, appData), mc, game, loaderFromMods(game), true));
             }
         }
         Path dotMc = appData.resolve(".minecraft");
-        if (jar.toAbsolutePath().startsWith(dotMc)) return Optional.of(new TextureGame("Minecraft Launcher", mc, dotMc, loaderFromMods(dotMc)));
-        return Optional.of(new TextureGame("Minecraft " + mc, mc, null, ""));
+        if (jar.toAbsolutePath().startsWith(dotMc)) return Optional.of(new TextureGame("Minecraft Launcher", mc, dotMc, loaderFromMods(dotMc), true));
+        return Optional.of(new TextureGame("Minecraft " + mc, mc, null, "", false));
     }
 
     /** A launcher instance by name, as BlockDesigner's asset setup lists them. */
     static Optional<TextureGame> instance(String name, Path appData, Path home) {
         for (String launcher : List.of("PrismLauncher", "MultiMC")) {
             Path inst = appData.resolve(launcher).resolve("instances").resolve(name);
-            Path pack = inst.resolve("mmc-pack.json");
-            if (!Files.isRegularFile(pack)) continue;
-            String mc = "", loader = "";
-            try {
-                for (JsonNode c : JSON.readTree(pack.toFile()).path("components")) {
-                    String uid = c.path("uid").asText("");
-                    if (uid.equals("net.minecraft")) mc = c.path("version").asText("");
-                    else if (uid.equals("net.fabricmc.fabric-loader") || uid.equals("org.quiltmc.quilt-loader")) loader = "fabric";
-                    else if (uid.equals("net.neoforged")) loader = "neoforge";
-                }
-            } catch (IOException | RuntimeException e) {
-                continue;
-            }
+            String[] p = mmcPack(inst.resolve("mmc-pack.json"));
+            if (p == null) continue;
             Path game = Files.isDirectory(inst.resolve("minecraft")) ? inst.resolve("minecraft") : inst.resolve(".minecraft");
-            return Optional.of(new TextureGame(name, mc, game, loader.isEmpty() ? loaderFromMods(game) : loader));
+            return Optional.of(new TextureGame(name, p[0], game, p[1].isEmpty() ? loaderFromMods(game) : p[1], false));
         }
         Path cf = home.resolve("curseforge/minecraft/Instances").resolve(name);
-        if (Files.isRegularFile(cf.resolve("minecraftinstance.json"))) {
-            try {
-                JsonNode n = JSON.readTree(cf.resolve("minecraftinstance.json").toFile());
-                String loader = loaderName(n.path("baseModLoader").path("name").asText(""));
-                return Optional.of(new TextureGame(name, n.path("gameVersion").asText(""), cf, loader.isEmpty() ? loaderFromMods(cf) : loader));
-            } catch (IOException | RuntimeException e) {
-                // unreadable: try the others
-            }
-        }
+        String[] c = curseForge(cf);
+        if (c != null) return Optional.of(new TextureGame(name, c[0], cf, c[1].isEmpty() ? loaderFromMods(cf) : c[1], false));
         Path mr = appData.resolve("ModrinthApp/profiles").resolve(name);
         if (Files.isDirectory(mr)) {
-            String mc = "", loader = "";
-            try {
-                if (Files.isRegularFile(mr.resolve("profile.json"))) {
-                    JsonNode m = JSON.readTree(mr.resolve("profile.json").toFile()).path("metadata");
-                    mc = m.path("game_version").asText("");
-                    loader = loaderName(m.path("loader").asText(""));
-                }
-            } catch (IOException | RuntimeException e) {
-                // the mods tell
-            }
-            return Optional.of(new TextureGame(name, mc, mr, loader.isEmpty() ? loaderFromMods(mr) : loader));
+            String[] m = modrinth(mr);
+            return Optional.of(new TextureGame(name, m[0], mr, m[1].isEmpty() ? loaderFromMods(mr) : m[1], false));
         }
         return Optional.empty();
+    }
+
+    /**
+     * A game folder picked by hand: its Minecraft version and loader from the launcher files around it (Prism or MultiMC's
+     * {@code mmc-pack.json} one up, CurseForge's {@code minecraftinstance.json}, Modrinth's {@code profile.json}), else
+     * the loader from its mods (or Paper, for a server with a Paper jar); "" for what can't be told.
+     */
+    static TextureGame at(Path gameDir, Path appData) {
+        String mc = "", loader = "";
+        String[] p = gameDir.getParent() == null ? null : mmcPack(gameDir.getParent().resolve("mmc-pack.json"));
+        if (p == null) p = curseForge(gameDir);
+        if (p == null && Files.isRegularFile(gameDir.resolve("profile.json"))) p = modrinth(gameDir);
+        if (p != null) {
+            mc = p[0];
+            loader = p[1];
+        }
+        if (loader.isEmpty()) loader = loaderFromMods(gameDir);
+        if (loader.isEmpty() && isPaper(gameDir)) loader = "paper";
+        return new TextureGame(name(gameDir, appData), mc, gameDir, loader, false);
+    }
+
+    /** The Minecraft version and loader in a Prism or MultiMC {@code mmc-pack.json}; null without a readable one. */
+    private static String[] mmcPack(Path pack) {
+        if (!Files.isRegularFile(pack)) return null;
+        String mc = "", loader = "";
+        try {
+            for (JsonNode c : JSON.readTree(pack.toFile()).path("components")) {
+                String uid = c.path("uid").asText("");
+                if (uid.equals("net.minecraft")) mc = c.path("version").asText("");
+                else if (uid.equals("net.fabricmc.fabric-loader") || uid.equals("org.quiltmc.quilt-loader")) loader = "fabric";
+                else if (uid.equals("net.neoforged")) loader = "neoforge";
+            }
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
+        return new String[]{mc, loader};
+    }
+
+    /** The Minecraft version and loader of a CurseForge instance folder; null without a readable one. */
+    private static String[] curseForge(Path dir) {
+        Path f = dir.resolve("minecraftinstance.json");
+        if (!Files.isRegularFile(f)) return null;
+        try {
+            JsonNode n = JSON.readTree(f.toFile());
+            return new String[]{n.path("gameVersion").asText(""), loaderName(n.path("baseModLoader").path("name").asText(""))};
+        } catch (IOException | RuntimeException e) {
+            return null;
+        }
+    }
+
+    /** The Minecraft version and loader of a Modrinth profile folder; "" for what its {@code profile.json} doesn't say. */
+    private static String[] modrinth(Path dir) {
+        try {
+            if (Files.isRegularFile(dir.resolve("profile.json"))) {
+                JsonNode m = JSON.readTree(dir.resolve("profile.json").toFile()).path("metadata");
+                return new String[]{m.path("game_version").asText(""), loaderName(m.path("loader").asText(""))};
+            }
+        } catch (IOException | RuntimeException e) {
+            // the mods tell
+        }
+        return new String[]{"", ""};
+    }
+
+    /** A Paper server: a {@code paper*.jar} in its folder. */
+    private static boolean isPaper(Path dir) {
+        try (Stream<Path> s = Files.list(dir)) {
+            return s.map(p -> p.getFileName().toString().toLowerCase(Locale.ROOT)).anyMatch(n -> n.startsWith("paper") && n.endsWith(".jar"));
+        } catch (IOException e) {
+            return false;
+        }
     }
 
     /** "neoforge-21.1.77" → neoforge, "fabric-0.16.5" → fabric; else "". */
@@ -161,9 +205,9 @@ record TextureGame(String label, String minecraft, Path gameDir, String loader) 
         return inner && game.getParent() != null && game.getParent().getFileName() != null ? game.getParent().getFileName().toString() : n;
     }
 
-    /** "1.21.1 Fabric", as the games list shows platforms. */
+    /** "1.21.1 Fabric", as the games list shows platforms; "26.2 Fabric?" when the version is a guess. */
     String platform() {
-        String l = loader.equals("neoforge") ? "NeoForge" : loader.equals("fabric") ? "Fabric" : "";
-        return (minecraft + " " + l).strip();
+        String l = loader.equals("neoforge") ? "NeoForge" : loader.equals("fabric") ? "Fabric" : loader.equals("paper") ? "Paper" : "";
+        return (minecraft + " " + l).strip() + (guessed ? "?" : "");
     }
 }
