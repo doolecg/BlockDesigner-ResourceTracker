@@ -2,10 +2,12 @@ package io.blockdesigner.resources;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import io.blockdesigner.plugin.OpenResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.io.BufferedReader;
+import java.io.IOException;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
 import java.net.InetAddress;
@@ -15,6 +17,8 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Base64;
 import java.util.List;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.LinkedBlockingQueue;
@@ -22,7 +26,10 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-/** The live link to BlockCompanion: instance files, a connection, installing the mod, and chests in the counts. */
+/**
+ * The live link to BlockCompanion: instance files, a connection, Edit in BlockDesigner from a game, installing the mod,
+ * and chests in the counts.
+ */
 class LiveLinkTest {
     @TempDir
     Path dir;
@@ -95,6 +102,137 @@ class LiveLinkTest {
             assertThat(messages.poll(5, TimeUnit.SECONDS).path("type").asText()).isEqualTo("grab");
             assertThat(c.send(c.newMessage("refresh"))).isTrue();
             assertThat(gotHello.poll(5, TimeUnit.SECONDS)).contains("refresh");
+            c.close();
+        }
+    }
+
+    /** A game that sends {@code lines} after the hello, then hands over every line it gets back. */
+    private static void fakeGame(ServerSocket server, String lines, BlockingQueue<String> got) {
+        Thread game = new Thread(() -> {
+            try (Socket s = server.accept()) {
+                BufferedReader in = new BufferedReader(new InputStreamReader(s.getInputStream(), StandardCharsets.UTF_8));
+                in.readLine();   // the hello
+                OutputStream out = s.getOutputStream();
+                out.write(lines.getBytes(StandardCharsets.UTF_8));
+                out.flush();
+                String line;
+                while ((line = in.readLine()) != null) got.add(line);
+            } catch (Exception e) {
+                got.add("error " + e);
+            }
+        });
+        game.setDaemon(true);
+        game.start();
+    }
+
+    /** A connection whose edits go to {@link GameEdit#handle}, opened with {@code opener}; it answers as GameLinks does. */
+    private GameConnection editingConnection(int port, GameEdit.Opener opener, byte[] project, List<String> notes) throws Exception {
+        GameInstance g = GameInstance.parse(instance("x", "client", Instant.now(), false, port).getBytes(StandardCharsets.UTF_8));
+        GameConnection c = new GameConnection(g, "1.4.1", new GameConnection.Listener() {
+            public void message(GameConnection c, JsonNode m) {
+                if (!m.path("type").asText().equals("edit")) return;
+                GameEdit.handle(c, m, dir.resolve("from-game"), opener,
+                        r -> c.send(GameLinks.projectMessage(c, r.name() + ".bdproj", r.name(), true, project, r.slot())),
+                        (r, why) -> notes.add(why));
+            }
+
+            public void stateChanged(GameConnection c) {
+            }
+        }, Runnable::run);
+        c.start();
+        return c;
+    }
+
+    private static final String WELCOME = "{\"type\":\"welcome\",\"protocol\":1}\n";
+
+    private static String edit(int slot, String file, byte[] data, String sha256) {
+        return "{\"type\":\"edit\",\"slot\":%d,\"file\":\"%s\",\"name\":\"Castle\",\"sha256\":\"%s\",\"data\":\"%s\"}\n"
+                .formatted(slot, file, sha256, Base64.getEncoder().encodeToString(data));
+    }
+
+    @Test
+    void anEditIsOpenedAndAnsweredWithTheProjectLinkedToItsSlot() throws Exception {
+        ObjectMapper json = new ObjectMapper();
+        byte[] schematic = "litematic bytes".getBytes(StandardCharsets.UTF_8);
+        byte[] project = "bdproj bytes".getBytes(StandardCharsets.UTF_8);
+        List<Path> opened = new ArrayList<>();
+        List<String> notes = new ArrayList<>();
+        try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+            BlockingQueue<String> got = new LinkedBlockingQueue<>();
+            fakeGame(server, WELCOME + edit(2, "Castle.litematic", schematic, GameLinks.sha256(schematic)), got);
+            GameConnection c = editingConnection(server.getLocalPort(), (file, done) -> {
+                opened.add(file);
+                try {
+                    assertThat(Files.readAllBytes(file)).isEqualTo(schematic);
+                } catch (IOException e) {
+                    throw new AssertionError(e);
+                }
+                done.accept(OpenResult.opened());
+            }, project, notes);
+            JsonNode answer = json.readTree(got.poll(5, TimeUnit.SECONDS));
+            assertThat(answer.path("type").asText()).isEqualTo("project");
+            assertThat(answer.path("link").asInt(-1)).isEqualTo(2);
+            assertThat(answer.path("open").asBoolean()).isTrue();
+            assertThat(answer.path("name").asText()).isEqualTo("Castle");
+            assertThat(answer.path("file").asText()).isEqualTo("Castle.bdproj");
+            assertThat(answer.path("sha256").asText()).isEqualTo(GameLinks.sha256(project));
+            assertThat(Base64.getDecoder().decode(answer.path("data").asText())).isEqualTo(project);
+            assertThat(opened).singleElement().satisfies(p -> {
+                assertThat(p.getFileName().toString()).isEqualTo("Castle.litematic");
+                assertThat(p).as("a schematic's copy goes once it is open").doesNotExist();
+            });
+            assertThat(notes).isEmpty();
+            c.close();
+        }
+    }
+
+    @Test
+    void aBadHashIsAnsweredWithAnErrorForTheSlot() throws Exception {
+        ObjectMapper json = new ObjectMapper();
+        byte[] schematic = "litematic bytes".getBytes(StandardCharsets.UTF_8);
+        List<String> notes = new ArrayList<>();
+        try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+            BlockingQueue<String> got = new LinkedBlockingQueue<>();
+            fakeGame(server, WELCOME + edit(3, "Castle.litematic", schematic, GameLinks.sha256("something else".getBytes(StandardCharsets.UTF_8))), got);
+            GameConnection c = editingConnection(server.getLocalPort(), (file, done) -> {
+                throw new AssertionError("a damaged file must not be opened");
+            }, new byte[]{1}, notes);
+            JsonNode answer = json.readTree(got.poll(5, TimeUnit.SECONDS));
+            assertThat(answer.path("type").asText()).isEqualTo("error");
+            assertThat(answer.path("slot").asInt(-1)).isEqualTo(3);
+            assertThat(answer.path("message").asText()).contains("checksum");
+            assertThat(notes).singleElement().asString().contains("checksum");
+            assertThat(dir.resolve("from-game")).doesNotExist();
+            c.close();
+        }
+    }
+
+    @Test
+    void aCancelledOrFailedOpenIsAnsweredWithAnError() throws Exception {
+        ObjectMapper json = new ObjectMapper();
+        byte[] project = "bdproj bytes".getBytes(StandardCharsets.UTF_8);
+        List<String> notes = new ArrayList<>();
+        List<Path> opened = new ArrayList<>();
+        try (ServerSocket server = new ServerSocket(0, 1, InetAddress.getLoopbackAddress())) {
+            BlockingQueue<String> got = new LinkedBlockingQueue<>();
+            fakeGame(server, WELCOME + edit(1, "Castle.bdproj", project, GameLinks.sha256(project))
+                    + edit(4, "../../Tower.schem", project, GameLinks.sha256(project)), got);
+            GameConnection c = editingConnection(server.getLocalPort(), (file, done) -> {
+                opened.add(file);
+                done.accept(opened.size() == 1 ? OpenResult.cancelled() : OpenResult.failed("Could not read Tower.schem: bad NBT"));
+            }, project, notes);
+            JsonNode first = json.readTree(got.poll(5, TimeUnit.SECONDS));
+            assertThat(first.path("type").asText()).isEqualTo("error");
+            assertThat(first.path("slot").asInt()).isEqualTo(1);
+            assertThat(first.path("message").asText()).isEqualTo("Cancelled in BlockDesigner");
+            JsonNode second = json.readTree(got.poll(5, TimeUnit.SECONDS));
+            assertThat(second.path("slot").asInt()).isEqualTo(4);
+            assertThat(second.path("message").asText()).isEqualTo("Could not read Tower.schem: bad NBT");
+            assertThat(opened).hasSize(2);
+            assertThat(opened.get(1).getFileName().toString()).as("no path from the game is followed").isEqualTo("Tower.schem");
+            assertThat(opened.get(1).getParent().getParent()).isEqualTo(dir.resolve("from-game"));
+            assertThat(opened).allSatisfy(p -> assertThat(p).as("nothing is kept when it didn't open").doesNotExist());
+            assertThat(notes).containsExactly("Cancelled in BlockDesigner", "Could not read Tower.schem: bad NBT");
             c.close();
         }
     }

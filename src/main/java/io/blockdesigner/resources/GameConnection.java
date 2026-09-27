@@ -63,8 +63,7 @@ final class GameConnection implements AutoCloseable {
     }
 
     private void run() {
-        try (Socket s = new Socket()) {
-            s.connect(new InetSocketAddress(InetAddress.getLoopbackAddress(), instance.port()), 2000);
+        try (Socket s = open()) {
             synchronized (this) {
                 socket = s;
                 out = s.getOutputStream();
@@ -86,6 +85,25 @@ final class GameConnection implements AutoCloseable {
         } finally {
             setState(State.CLOSED);
         }
+    }
+
+    /**
+     * Connects to 127.0.0.1, then ::1: BlockCompanion 0.2.0 and older listen on their JVM's loopback address, which is
+     * ::1 when that game's JVM prefers IPv6.
+     */
+    private Socket open() throws IOException {
+        IOException first = null;
+        for (byte[] ip : new byte[][]{{127, 0, 0, 1}, InetAddress.getByName("::1").getAddress()}) {
+            Socket s = new Socket();
+            try {
+                s.connect(new InetSocketAddress(InetAddress.getByAddress(ip), instance.port()), 2000);
+                return s;
+            } catch (IOException e) {
+                s.close();
+                if (first == null) first = e;
+            }
+        }
+        throw first;
     }
 
     private void setState(State s) {

@@ -50,6 +50,7 @@ final class GameLinks {
     private final PauseTransition liveDebounce = new PauseTransition(Duration.millis(1500));
     private Optional<Path> project = Optional.empty();
     private String projectName;
+    private String editNote;
 
     GameLinks(PluginContext ctx, String version, Prefs prefs) {
         this(ctx, version, GameInstance.defaultFolder(), prefs);
@@ -250,6 +251,14 @@ final class GameLinks {
             }
             case "received" -> ctx.status("Resource Tracker: " + c.instance.label() + " has " + m.path("file").asText(""));
             case "error" -> ctx.toast(c.instance.label() + ": " + m.path("message").asText("error"));
+            case "edit" -> GameEdit.handle(c, m, ctx.dataFolder().resolve("from-game"), (file, done) -> {
+                ctx.ui().toFront();
+                ctx.openFile(file, done);
+            }, r -> editOpened(c, r), (r, why) -> {
+                String what = r == null ? "a build" : r.name();
+                editNote = "Couldn't open " + what + " from " + c.instance.label() + ": " + why;
+                fire();
+            });
             default -> {
                 // newer message types: ignore
             }
@@ -257,10 +266,48 @@ final class GameLinks {
     }
 
     /**
+     * A game's build is now the open project: answers with it linked to the game's placement, ticks that game and
+     * turns Live on, so later edits follow in the game.
+     */
+    private void editOpened(GameConnection c, GameEdit.Request r) {
+        // A schematic opens as an unsaved project, which has no name of its own to read: use the game's.
+        if (project.isEmpty()) projectName = r.name();
+        if (send(true, c, r.slot()) == 0) {
+            String why = ctx.scene().layers().isEmpty() ? "The build is empty" : "Couldn't send it back";
+            c.send(GameEdit.error(c, r.slot(), why));
+            editNote = "Opened " + r.name() + " from " + c.instance.label() + ", but: " + why;
+            fire();
+            return;
+        }
+        if (!target(c.instance)) {
+            prefs.excluded.remove(key(c.instance));
+            prefs.save();
+        }
+        // Live on, as the Live button does; the game already has this version, so nothing more is sent now.
+        if (!prefs.live) {
+            prefs.live = true;
+            prefs.save();
+        }
+        editNote = "Opened " + r.name() + " from " + c.instance.label();
+        ctx.status("Resource Tracker: opened " + r.name() + " from " + c.instance.label() + "; Live is on");
+        fire();
+    }
+
+    /** What the last Edit in BlockDesigner from a game did, or null. */
+    String editNote() {
+        return editNote;
+    }
+
+    /**
      * Sends the open project to {@code only}, or to every connected, ticked game. {@code open}: the user sent it (the
      * game loads it if it isn't loaded); else it is a live update. Returns how many games it went to.
      */
     int send(boolean open, GameConnection only) {
+        return send(open, only, -1);
+    }
+
+    /** As {@link #send(boolean, GameConnection)}; {@code link} 0 or more: the answer to that slot's edit. */
+    int send(boolean open, GameConnection only, int link) {
         if (ctx.scene().layers().isEmpty()) return 0;
         List<GameConnection> to = new ArrayList<>();
         if (only != null) to.add(only);
@@ -280,11 +327,17 @@ final class GameLinks {
         String file = project.map(p -> p.getFileName().toString()).orElse(name + "." + ProjectFile.EXTENSION);
         int n = 0;
         for (GameConnection c : to) {
-            ObjectNode msg = c.newMessage("project").put("file", file).put("name", name).put("open", open).put("sha256", sha256(data))
-                    .put("data", Base64.getEncoder().encodeToString(data));
-            if (c.send(msg)) n++;
+            if (c.send(projectMessage(c, file, name, open, data, link))) n++;
         }
         return n;
+    }
+
+    /** The {@code project} message; {@code link} 0 or more adds {@code "link"} (the answer to an edit). */
+    static ObjectNode projectMessage(GameConnection c, String file, String name, boolean open, byte[] data, int link) {
+        ObjectNode msg = c.newMessage("project").put("file", file).put("name", name).put("open", open).put("sha256", sha256(data))
+                .put("data", Base64.getEncoder().encodeToString(data));
+        if (link >= 0) msg.put("link", link);
+        return msg;
     }
 
     /** The open project as a {@code .bdproj}, written the way BlockDesigner saves it. */

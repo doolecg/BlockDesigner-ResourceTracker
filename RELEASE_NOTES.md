@@ -1,3 +1,21 @@
+# Resource Tracker 1.5.0
+
+Edit a build from your game: pick **Edit in BlockDesigner** on a placement in BlockCompanion and it opens here as your project, and the game follows your changes.
+
+**Needs BlockDesigner 0.4.26 or later** (plugin API 7). Older BlockDesigners keep 1.4.1 until BlockDesigner itself is updated.
+
+## New
+- **Edit in BlockDesigner:** a placement picked in the game (BlockCompanion 0.3.0 or later) opens here as your project, whether it's a BlockDesigner project, `.schem`, `.litematic` or `.nbt` (a schematic opens as a new project). If your project has unsaved changes you're asked first. BlockDesigner comes to the front, that game is ticked and **Live** turns on, so the placement follows your edits where it stands: same position, turn and mirroring.
+- **What happened** shows under the status on the BlockCompanion page: "Opened Castle from Survival", or why it couldn't (for example the file didn't arrive whole, or you cancelled). The game is told too.
+
+## Changed
+- Built against the BlockDesigner 0.4.26 plugin API.
+
+## Fixed
+- **Games that listen on IPv6 now connect.** A game whose Java prefers IPv6 (BlockCompanion 0.2.0 and older) stayed on **Connecting…**; Resource Tracker now tries `::1` when `127.0.0.1` doesn't answer.
+
+---
+
 # Resource Tracker 1.4.1
 
 Install mod now always gets the newest BlockCompanion from GitHub, picks the right jar for your game, and never leaves an old copy behind. The games list is taller.

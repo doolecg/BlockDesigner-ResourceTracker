@@ -14,13 +14,13 @@
   <a href="https://github.com/doolecg/BlockDesigner-ResourceTracker/releases"><img alt="Downloads" src="https://img.shields.io/github/downloads/doolecg/BlockDesigner-ResourceTracker/total"></a>
   <a href="LICENSE"><img alt="License: MIT" src="https://img.shields.io/github/license/doolecg/BlockDesigner-ResourceTracker"></a>
   <img alt="Platform: Windows" src="https://img.shields.io/badge/platform-Windows-0078D6">
-  <a href="https://github.com/doolecg/BlockDesigner"><img alt="BlockDesigner plugin API 6" src="https://img.shields.io/badge/BlockDesigner-plugin%20API%206-46C46E"></a>
+  <a href="https://github.com/doolecg/BlockDesigner"><img alt="BlockDesigner plugin API 7" src="https://img.shields.io/badge/BlockDesigner-plugin%20API%207-46C46E"></a>
 </p>
 
 ---
 
 Resource Tracker is a plugin for [BlockDesigner](https://github.com/doolecg/BlockDesigner), the Windows editor for Minecraft builds. It is released
-on its own, separately from the app. It needs **BlockDesigner 0.4.24 or later** (plugin API 6).
+on its own, separately from the app. It needs **BlockDesigner 0.4.26 or later** (plugin API 7).
 
 **Contents:** [Download](#download-and-install) · [Features](#features) · [Building from source](#building-from-source) · [Project layout](#project-layout)
 
@@ -86,6 +86,9 @@ Everything to do with the [BlockCompanion](https://github.com/doolecg/BlockCompa
 - **Send project:** **Send to game** sends the project to the ticked games. It appears in front of you in the game; a server
   adds it to its shared schematics. Also in **Plugins › Send project to the game**. With **Live** on, every change you make
   here reaches the ticked games a moment later, so the ghosts follow your edits.
+- **Edit in BlockDesigner:** picked on a placement in the game (BlockCompanion 0.3.0 or later), it opens that build here
+  as your project, ticks that game and turns **Live** on, so the placement follows your edits. What happened shows under
+  the status at the bottom.
 - **Game progress:** the build in the game whose placed blocks count on the Materials page, how far it is, and how many
   linked chests count as gathered (below).
 - **BlockCompanion mod:** **Install mod…** (below).
@@ -152,7 +155,7 @@ You need Windows and a JDK 26 (Temurin 26 is what BlockDesigner uses; set `org.g
 ./gradlew jar      # build/libs/resource-tracker-<version>.jar
 ```
 
-The plugin compiles against the BlockDesigner plugin API jars in [`libs/`](libs) (from BlockDesigner 0.4.24). The app
+The plugin compiles against the BlockDesigner plugin API jars in [`libs/`](libs) (from BlockDesigner 0.4.26). The app
 provides them, Jackson and JavaFX at runtime, so they are never bundled into the plugin. To target a newer API, replace them
 with the jars from a newer BlockDesigner build (`./gradlew :plugin-api:jar :core:jar` in the
 [BlockDesigner repository](https://github.com/doolecg/BlockDesigner)) and update the file names in `build.gradle.kts`.

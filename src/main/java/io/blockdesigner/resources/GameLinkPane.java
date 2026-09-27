@@ -56,7 +56,7 @@ final class GameLinkPane {
     private final ObservableList<GameInstance> items = FXCollections.observableArrayList();
     private ItemList<GameInstance> list;
     private StatusBadge state;
-    private Label stateDetail, chestsText, gameStatus;
+    private Label stateDetail, chestsText, gameStatus, editNote;
     private Banner banner;
     private ToggleButton live;
     private Button textures;
@@ -137,7 +137,9 @@ final class GameLinkPane {
         state = new StatusBadge(Tone.NEUTRAL, "");
         stateDetail = Controls.caption("");
         stateDetail.setWrapText(true);
-        VBox status = new VBox(Theme.XS, state, stateDetail);
+        editNote = Controls.caption("");
+        editNote.setWrapText(true);
+        VBox status = new VBox(Theme.XS, state, stateDetail, editNote);
 
         PanelScaffold page = new PanelScaffold()
                 .add(games, sending, progress, mod)
@@ -164,6 +166,9 @@ final class GameLinkPane {
         LinkStatus s = LinkStatus.of(links);
         state.set(s.tone(), s.title());
         stateDetail.setText(s.detail());
+        String note = links.editNote();
+        editNote.setText(note == null ? "" : note);
+        Controls.show(editNote, note != null);
 
         int chests = links.chestCount();
         chestsText.setText(chests > 0
