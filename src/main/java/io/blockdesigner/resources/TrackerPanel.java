@@ -6,28 +6,34 @@ import io.blockdesigner.plugin.PluginContext;
 import io.blockdesigner.plugin.PluginPanel;
 import io.blockdesigner.plugin.SceneEvent;
 import io.blockdesigner.plugin.Subscription;
+import io.blockdesigner.plugin.ui.ActionBar;
+import io.blockdesigner.plugin.ui.Controls;
+import io.blockdesigner.plugin.ui.EmptyState;
+import io.blockdesigner.plugin.ui.Form;
+import io.blockdesigner.plugin.ui.Icon;
+import io.blockdesigner.plugin.ui.ItemList;
+import io.blockdesigner.plugin.ui.PanelScaffold;
+import io.blockdesigner.plugin.ui.Section;
+import io.blockdesigner.plugin.ui.Theme;
+import io.blockdesigner.plugin.ui.Tone;
 import javafx.animation.PauseTransition;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
-import javafx.geometry.Insets;
 import javafx.geometry.Pos;
 import javafx.scene.Node;
 import javafx.scene.control.Button;
-import javafx.scene.control.CheckBox;
 import javafx.scene.control.ComboBox;
+import javafx.scene.control.Hyperlink;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
-import javafx.scene.control.ListView;
+import javafx.scene.control.OverrunStyle;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
-import javafx.scene.input.Clipboard;
-import javafx.scene.input.ClipboardContent;
 import javafx.scene.layout.HBox;
 import javafx.scene.layout.Priority;
-import javafx.scene.layout.Region;
 import javafx.scene.layout.VBox;
 import javafx.stage.FileChooser;
 import javafx.util.Duration;
@@ -35,22 +41,19 @@ import javafx.util.Duration;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
-import java.util.concurrent.Executors;
-import java.util.concurrent.ScheduledExecutorService;
-import java.util.concurrent.TimeUnit;
 
 /**
- * The Resource Tracker panel: every item the build needs, how many are placed in the game (when linked to a
- * BlockCompanion build), how many you've gathered (typed in, or ticked done), how many the game's linked chests hold,
- * and what's left, each with a bar that fills red to green, and an overall bar. It recounts as the build changes, while
- * it's on screen, and watches the game's progress folder. The Game link section lists the games and sends projects.
+ * The Materials page: where to count, then every item the build needs (filter, Hide done, sort), each with how many
+ * are placed in the game (when linked to a BlockCompanion build), how many you've gathered (typed in, or ticked done),
+ * how many the game's linked chests hold, and what's left, with a bar that fills red to green. At the bottom: the
+ * overall progress and the game line, then Copy list, Save CSV and Reset. It recounts as the build changes, while it's
+ * on screen.
  */
 final class TrackerPanel implements PluginPanel {
     private enum Sort {
@@ -68,10 +71,21 @@ final class TrackerPanel implements PluginPanel {
         }
     }
 
+    private final TrackerSession session;
     private final Tracker tracker;
-    private final GameLinks links;
-    private GameLinkPane linkPane;
-    private final GameLinks.Listener linksChanged = this::linksChanged;
+    private final Prefs prefs;
+    private final TrackerSession.Listener listener = new TrackerSession.Listener() {
+        @Override
+        public void countChanged(boolean recount) {
+            if (recount) changed();
+            else if (list != null) show();
+        }
+
+        @Override
+        public void tick() {
+            if (list != null) showGame();
+        }
+    };
     private final List<Subscription> subscriptions = new ArrayList<>();
     private final Map<String, Image> icons = new HashMap<>();
     private final ObservableList<Tally.Need> rows = FXCollections.observableArrayList();
@@ -84,24 +98,15 @@ final class TrackerPanel implements PluginPanel {
     private ComboBox<Sort> sort;
     private GradientBar progress;
     private Label progressText;
-    private ListView<Tally.Need> list;
-    private ComboBox<Choice> gameLink;
-    private Label gameStatus;
-    private boolean updatingChoices;
-    private ScheduledExecutorService watcher;
-    private volatile boolean disposed;
+    private Label gameLine;
+    private HBox gameRow;
+    private ItemList<Tally.Need> list;
+    private EmptyState empty;
 
-    /** An entry of the game link picker. */
-    private record Choice(Gathered.Link link, String label) {
-        @Override
-        public String toString() {
-            return label;
-        }
-    }
-
-    TrackerPanel(Tracker tracker, GameLinks links) {
-        this.tracker = tracker;
-        this.links = links;
+    TrackerPanel(TrackerSession session) {
+        this.session = session;
+        this.tracker = session.tracker;
+        this.prefs = session.prefs;
     }
 
     @Override
@@ -130,10 +135,6 @@ final class TrackerPanel implements PluginPanel {
         subscriptions.add(ctx.on(SceneEvent.BlocksChanged.class, e -> changed()));
         subscriptions.add(ctx.on(SceneEvent.LayersChanged.class, e -> changed()));
         subscriptions.add(ctx.on(SceneEvent.ActiveLayerChanged.class, e -> changed()));
-        subscriptions.add(ctx.on(SceneEvent.ProjectOpened.class, e -> {
-            if (gameLink != null) updateChoices();   // another project: another automatic match and saved link
-            changed();
-        }));
         subscriptions.add(ctx.on(SceneEvent.SelectionChanged.class, e -> {
             if (tracker.scope == Tally.Scope.SELECTION) changed();
         }));
@@ -141,203 +142,99 @@ final class TrackerPanel implements PluginPanel {
             if (stale) refresh();
         });
 
+        // Where to count.
         ComboBox<Tally.Scope> scope = new ComboBox<>(FXCollections.observableArrayList(Tally.Scope.values()));
         scope.setValue(tracker.scope);
         scope.setTooltip(new Tooltip("Where to count what the build needs"));
         scope.valueProperty().addListener((o, a, b) -> {
             tracker.scope = b;
+            prefs.scope = b.name();
+            prefs.save();
             refresh();
         });
-        scope.setMaxWidth(Double.MAX_VALUE);
-        HBox.setHgrow(scope, Priority.ALWAYS);
-        CheckBox mobs = new CheckBox("Mobs");
-        mobs.setSelected(tracker.mobs);
-        mobs.setTooltip(new Tooltip("Count mobs as their spawn eggs (paintings, frames, armor stands, boats and minecarts always count)"));
-        mobs.selectedProperty().addListener((o, a, b) -> {
-            tracker.mobs = b;
-            refresh();
-        });
-        Button refreshAll = new Button("↻");
-        refreshAll.setTooltip(new Tooltip("Refresh: count again, look at the game's progress and chests again"));
-        refreshAll.setOnAction(e -> refreshAll());
-        HBox top = new HBox(8, scope, mobs, refreshAll);
-        top.setAlignment(Pos.CENTER_LEFT);
+        Form countForm = new Form();
+        countForm.row("Count in", scope);
+        Section count = new Section("Count", countForm)
+                .actions(Controls.iconButton(Icon.REFRESH, "Count again, and look at the game's progress and chests again", session::recountAll));
 
-        Label gameHeader = new Label("Game progress");
-        gameHeader.setMinWidth(Region.USE_PREF_SIZE);
-        gameHeader.setStyle("-fx-font-weight: bold; -fx-font-size: 11px;");
-        gameLink = new ComboBox<>();
-        gameLink.setMaxWidth(Double.MAX_VALUE);
-        gameLink.setMinWidth(60);
-        HBox.setHgrow(gameLink, Priority.ALWAYS);
-        gameLink.setTooltip(new Tooltip("The build in the game (BlockCompanion) whose placed blocks count as done."
-                + " Automatic picks the one loaded from this project; Not linked ignores the game."));
-        gameLink.valueProperty().addListener((o, a, b) -> {
-            if (updatingChoices || b == null || b.link().equals(tracker.link())) return;
-            tracker.setLink(b.link());
-            updateChoices();
+        // The items.
+        search = Controls.search("Filter items");
+        search.textProperty().addListener((o, a, b) -> show());
+        hideDone = Controls.toggle("Hide done", "Hide the items you have enough of");
+        hideDone.setSelected(prefs.hideDone);
+        hideDone.selectedProperty().addListener((o, a, b) -> {
+            prefs.hideDone = b;
+            prefs.save();
             show();
         });
-        HBox gameRow = new HBox(6, gameHeader, gameLink);
-        gameRow.setAlignment(Pos.CENTER_LEFT);
-        gameStatus = new Label();
-        gameStatus.setWrapText(true);
-        muted(gameStatus);
-        VBox game = new VBox(2, gameRow, gameStatus);
-
-        search = new TextField();
-        search.setPromptText("Filter…");
-        search.textProperty().addListener((o, a, b) -> show());
-        HBox.setHgrow(search, Priority.ALWAYS);
-        hideDone = new ToggleButton("Hide done");
-        hideDone.setMinWidth(Region.USE_PREF_SIZE);
-        hideDone.setTooltip(new Tooltip("Hide the items you have enough of"));
-        hideDone.selectedProperty().addListener((o, a, b) -> show());
         sort = new ComboBox<>(FXCollections.observableArrayList(Sort.values()));
-        sort.setValue(Sort.LEFT);
-        sort.setMinWidth(Region.USE_PREF_SIZE);
-        search.setMinWidth(60);
-        sort.valueProperty().addListener((o, a, b) -> show());
-        HBox filters = new HBox(6, search, hideDone, sort);
+        sort.setValue(Prefs.constant(Sort.class, prefs.sort, Sort.LEFT));
+        sort.setPrefWidth(130);
+        sort.setMinWidth(0);
+        sort.setTooltip(new Tooltip("Sort the items"));
+        sort.valueProperty().addListener((o, a, b) -> {
+            prefs.sort = b.name();
+            prefs.save();
+            show();
+        });
+        HBox filters = new HBox(Theme.SM, hideDone, Controls.spacer(), sort);
         filters.setAlignment(Pos.CENTER_LEFT);
+        empty = new EmptyState(Icon.INFO, "Nothing to count.");
+        list = new ItemList<Tally.Need>().empty(empty);
+        list.setItems(rows);
+        list.setCellFactory(v -> new Row());
+        Section items = new Section("Items", search, filters).grow(list);
 
+        // How far along, at the bottom.
         progress = new GradientBar(8);
         progress.setMaxWidth(Double.MAX_VALUE);
-        progressText = new Label();
-        muted(progressText);
+        progressText = Controls.caption("");
+        progressText.setWrapText(true);
+        gameLine = Controls.caption("");
+        gameLine.setTooltip(new Tooltip("The build in the game this project is linked to: change it on the BlockCompanion page"));
+        HBox.setHgrow(gameLine, Priority.ALWAYS);
+        Hyperlink toGame = Controls.link("BlockCompanion page", () -> ctx.showPanel(TrackerSession.GAME_PAGE));
+        gameRow = new HBox(Theme.SM, gameLine, toGame);
+        gameRow.setAlignment(Pos.CENTER_LEFT);
+        VBox status = new VBox(Theme.XS, progress, progressText, gameRow);
 
-        list = new ListView<>(rows);
-        list.setCellFactory(v -> new Row());
-        list.setPlaceholder(new Label("Nothing to gather here yet."));
-        VBox.setVgrow(list, Priority.ALWAYS);
+        Button copy = Controls.button("Copy list", "Copy what is left to gather as text", session::copyList);
+        Button csv = Controls.button("Save CSV…", "Save needed, placed (when linked to the game), gathered and left for every item as a spreadsheet",
+                this::saveCsv);
+        Button reset = Controls.button("Reset…", "Forget what you have gathered for this project", this::reset);
 
-        Button copy = new Button("Copy list");
-        copy.setTooltip(new Tooltip("Copy what is left to gather as text"));
-        copy.setOnAction(e -> copyList());
-        Button csv = new Button("Save CSV…");
-        csv.setTooltip(new Tooltip("Save needed, placed (when linked to the game), gathered and left for every item as a spreadsheet"));
-        csv.setOnAction(e -> saveCsv());
-        Button reset = new Button("Reset");
-        reset.setTooltip(new Tooltip("Forget what you have gathered for this project"));
-        reset.setOnAction(e -> {
-            tracker.resetGathered();
-            show();
-        });
-        Region grow = new Region();
-        HBox.setHgrow(grow, Priority.ALWAYS);
-        HBox buttons = new HBox(6, copy, csv, grow, reset);
-
-        linkPane = new GameLinkPane(ctx, links, this::refreshAll);
-        links.addListener(linksChanged);
-        tracker.setChests(links.chests());
-        VBox root = new VBox(8, top, game, linkPane.create(), filters, progress, progressText, list, buttons);
-        root.setPadding(new Insets(10));
-        // A first look at the game straight away (a few small files), then the watch keeps it current.
-        tracker.gameScanned(tracker.progressFolder.scan());
-        updateChoices();
+        PanelScaffold page = new PanelScaffold()
+                .add(count)
+                .grow(items)
+                .footer(status, new ActionBar(copy, csv, Controls.spacer(), reset));
+        session.addListener(listener);
+        tracker.setChests(session.links.chests());
         refresh();
-        watchGame();
-        return root;
+        return page;
     }
 
     @Override
     public void dispose() {
-        disposed = true;
         subscriptions.forEach(Subscription::cancel);
         subscriptions.clear();
-        links.removeListener(linksChanged);
-        if (linkPane != null) linkPane.dispose();
+        session.removeListener(listener);
         if (debounce != null) debounce.stop();
-        if (watcher != null) watcher.shutdownNow();
-        watcher = null;
+        list = null;
     }
 
-    /** Looks at BlockCompanion's progress folder every 2 s on a background thread; the results go to the JavaFX thread. */
-    private void watchGame() {
-        watcher = Executors.newSingleThreadScheduledExecutor(r -> {
-            Thread t = new Thread(r, "Resource Tracker game progress");
-            t.setDaemon(true);
-            return t;
-        });
-        watcher.scheduleWithFixedDelay(() -> {
-            try {
-                ProgressFolder.Snapshot s = tracker.progressFolder.scan();
-                if (!disposed) ctx.runOnUiThread(() -> gameScanned(s));
-            } catch (RuntimeException e) {
-                // try again next time; a failure must not stop the watch
-            }
-        }, 2, 2, TimeUnit.SECONDS);
-    }
-
-    private void gameScanned(ProgressFolder.Snapshot s) {
-        if (disposed) return;
-        if (s.equals(tracker.game())) {
-            showGame();   // the age moves on
-            return;
-        }
-        tracker.gameScanned(s);
-        updateChoices();
+    private void reset() {
+        if (!ctx.ui().confirm("Reset gathered", "Forget what you have gathered for " + tracker.projectName()
+                + "? Blocks placed in the game still count.", "Reset", true)) return;
+        tracker.resetGathered();
         show();
     }
 
-    /** Fills the link picker: automatic, not linked, and every build the game has written progress for. */
-    private void updateChoices() {
-        updatingChoices = true;
-        try {
-            List<Choice> items = new ArrayList<>();
-            items.add(new Choice(Gathered.Link.AUTO, tracker.autoMatch().map(p -> "Automatic: " + p.label()).orElse("Automatic (no match yet)")));
-            items.add(new Choice(Gathered.Link.OFF, "Not linked"));
-            for (GameProgress p : tracker.game().builds()) {
-                String file = p.file().getFileName().toString();
-                items.add(new Choice(Gathered.Link.file(file), p.label() + " · " + hash(file)));
-            }
-            Gathered.Link current = tracker.link();
-            if (items.stream().noneMatch(c -> c.link().equals(current))) items.add(new Choice(current, current.file() + " (gone)"));
-            gameLink.getItems().setAll(items);
-            items.stream().filter(c -> c.link().equals(current)).findFirst().ifPresent(gameLink::setValue);
-        } finally {
-            updatingChoices = false;
-        }
-    }
-
-    /** The hash part of a progress file's name ({@code Watchtower-a1b2c3d4e5f6.json} → {@code a1b2c3d4e5f6}). */
-    private static String hash(String file) {
-        String stem = file.endsWith(".json") ? file.substring(0, file.length() - 5) : file;
-        int dash = stem.lastIndexOf('-');
-        return dash < 0 ? stem : stem.substring(dash + 1);
-    }
-
-    /** The line under the link picker: how far the build is in the game, or what to do to get there. */
+    /** The line about the build in the game, when linked. */
     private void showGame() {
-        ProgressFolder.Snapshot s = tracker.game();
         GameProgress p = tracker.linked();
-        Gathered.Link l = tracker.link();
-        String text;
-        if (p != null) text = p.status(Instant.now());
-        else if (l.mode() == Gathered.Link.Mode.OFF) text = "Not linked: blocks placed in the game don't count.";
-        else if (!s.folderExists()) text = "Install BlockCompanion and load this project in the game.";
-        else if (l.mode() == Gathered.Link.Mode.FILE) text = "That build's progress file is gone; pick another.";
-        else if (s.builds().isEmpty()) text = "Load this project in the game with BlockCompanion to count what's placed.";
-        else text = "No build in the game matches this project; pick one above.";
-        gameStatus.setText(text);
-    }
-
-    /** The games reported something: their chests may hold different things now. */
-    private void linksChanged() {
-        var now = links.chests();
-        if (tracker.hasChests() || !now.isEmpty()) {
-            tracker.setChests(now);
-            if (list != null) show();
-        }
-    }
-
-    /** The Refresh button: the games, the progress folder and the count, all looked at again. */
-    private void refreshAll() {
-        links.refresh();
-        tracker.gameScanned(tracker.progressFolder.scan());
-        tracker.setChests(links.chests());
-        updateChoices();
-        refresh();
+        String text = p == null ? "" : p.status(java.time.Instant.now());
+        gameLine.setText(text);
+        Controls.show(gameRow, !text.isEmpty());
     }
 
     private void changed() {
@@ -375,22 +272,37 @@ final class TrackerPanel implements PluginPanel {
         shown.sort(order.thenComparing(Tally.Need::item));
         rows.setAll(shown);
         int kinds = tracker.needs().size();
+        boolean noSelection = tracker.scope == Tally.Scope.SELECTION && ctx.selection().isEmpty();
+        empty.hint(kinds > 0 ? "No item matches the filter." : noSelection ? "Select some blocks to count them." : "Build something to count it.");
         progress.setValue(needed == 0 ? 0 : (double) have / needed);
         progressText.setText(kinds == 0
-                ? (tracker.scope == Tally.Scope.SELECTION && ctx.selection().isEmpty() ? "Select some blocks to count them" : "Nothing to count")
+                ? (noSelection ? "Select some blocks to count them" : "Nothing to count")
                 : String.format("%,d of %,d items %s (%d%%) · %d of %d kinds done", have, needed,
                 game ? (tracker.hasChests() ? "placed, gathered or in chests" : "placed or gathered") : tracker.hasChests() ? "gathered or in chests" : "gathered",
                 needed == 0 ? 0 : Math.round(100.0 * have / needed), done, kinds));
         int left = kinds - done;
         panel.setBadge(left == 0 ? null : Integer.toString(left));
         showGame();
+        // Minecraft's assets (the icons) can load after the first count: redraw the rows shortly, for up to a minute.
+        if (!shown.isEmpty()) waitForIcons(shown.getFirst());
     }
 
-    private void copyList() {
-        ClipboardContent c = new ClipboardContent();
-        c.putString(tracker.text());
-        Clipboard.getSystemClipboard().setContent(c);
-        ctx.toast("Materials list copied");
+    /** How often the rows were redrawn waiting for block icons. */
+    private int iconRetries;
+    private boolean waitingForIcons;
+
+    private void waitForIcons(Tally.Need sample) {
+        if (waitingForIcons || sample.icon() == null || icon(sample) != null || iconRetries >= 30) return;
+        waitingForIcons = true;
+        PauseTransition retry = new PauseTransition(Duration.seconds(2));
+        retry.setOnFinished(e -> {
+            waitingForIcons = false;
+            iconRetries++;
+            if (list == null) return;
+            list.refresh();
+            waitForIcons(sample);
+        });
+        retry.play();
     }
 
     private void saveCsv() {
@@ -398,8 +310,7 @@ final class TrackerPanel implements PluginPanel {
         fc.setTitle("Save materials");
         fc.setInitialFileName("materials.csv");
         fc.getExtensionFilters().add(new FileChooser.ExtensionFilter("CSV spreadsheet", "*.csv"));
-        var window = list.getScene() == null ? null : list.getScene().getWindow();
-        var file = fc.showSaveDialog(window);
+        var file = fc.showSaveDialog(ctx.ui().owner());
         if (file == null) return;
         try {
             Files.writeString(file.toPath(), tracker.csv(), StandardCharsets.UTF_8);
@@ -412,11 +323,12 @@ final class TrackerPanel implements PluginPanel {
     private Image icon(Tally.Need n) {
         BlockState st = n.icon();
         if (st == null) return null;
-        return icons.computeIfAbsent(st.toString(), k -> ctx.blockIcon(st).orElse(null));
-    }
-
-    private static void muted(Label l) {
-        l.setStyle("-fx-text-fill: -color-fg-muted; -fx-font-size: 11px;");
+        Image cached = icons.get(st.toString());
+        if (cached != null) return cached;
+        // Not cached while missing: Minecraft's assets can load after the page was first drawn.
+        Image i = ctx.blockIcon(st).orElse(null);
+        if (i != null) icons.put(st.toString(), i);
+        return i;
     }
 
     /** One item: icon, name, what's left and needed (as stacks), a box for how many you have, and a done button. */
@@ -425,38 +337,39 @@ final class TrackerPanel implements PluginPanel {
         private final Label name = new Label(), meta = new Label();
         private final GradientBar bar = new GradientBar(5);
         private final TextField have = new TextField();
-        private final Button done = new Button("✓");
+        private final Button done = Controls.iconButton(Icon.CHECK, "Gathered all of it", null);
         private final HBox root;
         private final Tooltip rowTip = new Tooltip();
+        private final Tooltip haveTip = new Tooltip();
         private Tally.Need bound;
 
         Row() {
+            getStyleClass().add("bd-list-cell");
             iv.setFitWidth(24);
             iv.setFitHeight(24);
             iv.setSmooth(false);
-            name.setStyle("-fx-font-weight: bold;");
+            iv.setPreserveRatio(true);
+            name.getStyleClass().add("bd-row-title");
             name.setMinWidth(0);
+            name.setTextOverrun(OverrunStyle.ELLIPSIS);
+            meta.getStyleClass().add("bd-row-meta");
             meta.setMinWidth(0);
-            muted(meta);
             bar.setMaxWidth(Double.MAX_VALUE);
-            VBox text = new VBox(1, name, meta, bar);
+            VBox text = new VBox(2, name, meta, bar);
             text.setMinWidth(0);
             text.setMaxWidth(Double.MAX_VALUE);
             HBox.setHgrow(text, Priority.ALWAYS);
+            have.getStyleClass().add("bd-inline-field");
             have.setPrefColumnCount(4);
-            // A visible box in any theme (list cells otherwise flatten text fields).
-            have.setStyle("-fx-background-color: -color-bg-default; -fx-border-color: -color-border-default; -fx-border-radius: 4;"
-                    + " -fx-background-radius: 4; -fx-alignment: center-right;");
-            have.setMinWidth(Region.USE_PREF_SIZE);
-            done.setMinWidth(Region.USE_PREF_SIZE);
-            iv.setPreserveRatio(true);
+            have.setMinWidth(56);
+            have.setPrefWidth(56);
             have.setPromptText("0");
-            have.setTooltip(new Tooltip("How many you have: a number, stacks (10s), shulker boxes (2sh), or a sum (1sh + 3s + 12)"));
+            have.setTooltip(haveTip);
+            have.setAccessibleText("How many you have");
             have.setOnAction(e -> commit());
             have.focusedProperty().addListener((o, a, b) -> {
                 if (!b) commit();
             });
-            done.setTooltip(new Tooltip("Gathered all of it"));
             done.setOnAction(e -> {
                 if (bound == null) return;
                 // All of what isn't placed in the game yet (all of it when not linked).
@@ -464,7 +377,7 @@ final class TrackerPanel implements PluginPanel {
                         : Tracker.rest(bound.count(), tracker.placed(bound.item()), tracker.chests(bound.item())));
                 show();
             });
-            root = new HBox(8, iv, text, have, done);
+            root = new HBox(Theme.SM, iv, text, have, done);
             Tooltip.install(text, rowTip);
             root.setAlignment(Pos.CENTER_LEFT);
             root.setMinWidth(0);
@@ -488,6 +401,7 @@ final class TrackerPanel implements PluginPanel {
         protected void updateItem(Tally.Need n, boolean empty) {
             super.updateItem(n, empty);
             bound = empty ? null : n;
+            setText(null);
             if (n == null || empty) {
                 setGraphic(null);
                 return;
@@ -499,30 +413,36 @@ final class TrackerPanel implements PluginPanel {
             boolean game = tracker.linked() != null;
             long placed = tracker.placed(n.item());
             boolean allPlaced = game && placed >= n.count();
+            String metaText, tip;
             if (!game) {
-                meta.setText(l == 0 ? "Done · " + need : l == n.count() ? "Need " + need : String.format("%,d left · need %s", l, need));
-                rowTip.setText(String.format("Needed: %,d · gathered: %,d · left: %,d", n.count(), got, l));
-                have.getTooltip().setText("How many you have: a number, stacks (10s), shulker boxes (2sh), or a sum (1sh + 3s + 12)");
+                metaText = l == 0 ? "Done · " + need : l == n.count() ? "Need " + need : String.format("%,d left · need %s", l, need);
+                tip = String.format("Needed: %,d · gathered: %,d · left: %,d", n.count(), got, l);
+                haveTip.setText("How many you have: a number, stacks (10s), shulker boxes (2sh), or a sum (1sh + 3s + 12)");
             } else {
-                meta.setText(allPlaced ? "All placed · need " + need
+                metaText = allPlaced ? "All placed · need " + need
                         : l == 0 ? String.format("Done · %,d placed · need %s", placed, need)
-                        : String.format("%,d left · %,d placed · need %s", l, placed, need));
-                rowTip.setText(String.format("Needed: %,d · placed in the game: %,d · gathered (in hand, not placed yet): %,d · left: %,d%n"
+                        : String.format("%,d left · %,d placed · need %s", l, placed, need);
+                tip = String.format("Needed: %,d · placed in the game: %,d · gathered (in hand, not placed yet): %,d · left: %,d%n"
                         + "Left = needed − placed − gathered. Placed blocks count by themselves: type only what you have and haven't placed yet.",
-                        n.count(), placed, got, l));
-                have.getTooltip().setText("How many you have and haven't placed yet: a number, stacks (10s), shulker boxes (2sh), or a sum (1sh + 3s + 12)");
+                        n.count(), placed, got, l);
+                haveTip.setText("How many you have and haven't placed yet: a number, stacks (10s), shulker boxes (2sh), or a sum (1sh + 3s + 12)");
             }
             long inChests = tracker.chests(n.item());
             if (inChests > 0) {
-                meta.setText(meta.getText() + String.format(" · %,d in chests", inChests));
-                rowTip.setText(rowTip.getText() + String.format("%nIn your linked chests in the game: %,d (counts as gathered).", inChests));
+                metaText += String.format(" · %,d in chests", inChests);
+                tip += String.format("%nIn your linked chests in the game: %,d (counts as gathered).", inChests);
             }
+            meta.setText(metaText);
+            rowTip.setText(tip);
+            Tone.apply(meta, l == 0 ? Tone.SUCCESS : Tone.NEUTRAL);
             bar.setValue(n.count() == 0 ? 1 : (n.count() - l) / (double) n.count());
-            meta.setStyle(l == 0 ? "-fx-text-fill: -color-success-fg; -fx-font-size: 11px;" : "-fx-text-fill: -color-fg-muted; -fx-font-size: 11px;");
             have.setText(got == 0 ? "" : format(got));
             done.setDisable(allPlaced);
-            done.setText(l == 0 && !allPlaced ? "↺" : "✓");
-            done.getTooltip().setText(allPlaced ? "All placed in the game" : l == 0 ? "Not gathered yet after all" : "Gathered all of it");
+            boolean undo = l == 0 && !allPlaced;
+            done.setGraphic((undo ? Icon.UNDO : Icon.CHECK).node(16));
+            String doneTip = allPlaced ? "All placed in the game" : undo ? "Not gathered yet after all" : "Gathered all of it";
+            done.getTooltip().setText(doneTip);
+            done.setAccessibleText(doneTip);
             setGraphic(root);
         }
 

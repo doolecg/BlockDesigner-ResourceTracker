@@ -1,3 +1,28 @@
+# Resource Tracker 1.3.0
+
+Materials and BlockCompanion are now two pages of Resource Tracker's tab, with a status dot for the link to your game, and a cleaner layout on both.
+
+**Needs BlockDesigner 0.4.24 or later** (plugin API 6). Older BlockDesigners keep 1.2.0 until BlockDesigner itself is updated.
+
+## New
+- **Status dot on the BlockCompanion page's button:** green when connected to a game, yellow while connecting, grey while waiting, even before you open the page.
+- **Its setting in the Settings window:** **Count mobs as their spawn eggs** is on Resource Tracker's page in Settings (the gear on the tab). Your choice is kept.
+- **Copy materials list** and **Send project to the game** can be given keys in Settings › Keybinds.
+- **A link to the BlockCompanion page** next to the in-game progress on the Materials page.
+
+## Changed
+- **Two pages:** the tab now has a Materials page and a BlockCompanion page instead of one long page. The page you used last comes back, and where you count, the sort, Hide done and the game link's settings are remembered between runs.
+- **Materials page:** where to count at the top, then the items; the overall progress, Copy list, Save CSV and Reset at the bottom. **Reset…** asks before it forgets what you gathered.
+- **BlockCompanion page:** the games first, each with a Connected, Connecting or Disconnected badge; then sending, game progress and installing the mod; how the link stands, and what an install did, at the bottom. Choosing where to install uses BlockDesigner's own dialogs.
+- **Use its textures** uses BlockDesigner's resource packs directly.
+- The progress bars use the theme's own colours.
+
+## Fixed
+- **Narrow tabs:** nothing is cut off at 300 pixels wide any more.
+- The counts no longer refresh twice after each change.
+
+---
+
 # Resource Tracker 1.2.0
 
 A live link to the game: send your project into Minecraft, have the game follow every change you make, and count what your chests in the game hold. It works with BlockCompanion 0.1.0 or later.

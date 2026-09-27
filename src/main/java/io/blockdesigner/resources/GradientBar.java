@@ -16,11 +16,12 @@ final class GradientBar extends Region {
         setMinHeight(height);
         setPrefHeight(height);
         setMaxHeight(height);
-        setMinWidth(20);
+        setMinWidth(0);
         setStyle("-fx-background-color: -color-bg-subtle; -fx-background-radius: 3; -fx-border-color: -color-border-muted;"
                 + " -fx-border-radius: 3; -fx-border-width: 1;");
-        fill.setStyle("-fx-background-color: linear-gradient(to right, #d8413a 0%, #e8872f 33%, #e9cf3f 66%, #5dbe4a 100%);"
-                + " -fx-background-radius: 3;");
+        // The theme's own danger, warning and success colours, so it fits every theme, dark or light.
+        fill.setStyle("-fx-background-color: linear-gradient(to right, -color-danger-emphasis 0%, -color-warning-emphasis 55%,"
+                + " -color-success-emphasis 100%); -fx-background-radius: 3;");
         fill.setClip(clip);
         fill.setMouseTransparent(true);
         getChildren().add(fill);

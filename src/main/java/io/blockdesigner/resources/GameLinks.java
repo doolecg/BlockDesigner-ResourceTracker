@@ -17,13 +17,11 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.TreeMap;
 
 /**
@@ -46,23 +44,23 @@ final class GameLinks {
     private final Map<String, GameConnection> connections = new HashMap<>();
     private final Map<String, JsonNode> status = new HashMap<>();
     private final Map<String, Long> retryAt = new HashMap<>();
-    /** Games the user unticked, by {@link #key}: projects don't go there. */
-    private final Set<String> excluded = new HashSet<>();
-    private boolean live;
+    /** Live, and the games the user unticked (by {@link #key}: projects don't go there); saved on every change. */
+    private final Prefs prefs;
     private final PauseTransition liveDebounce = new PauseTransition(Duration.millis(1500));
     private Optional<Path> project = Optional.empty();
     private String projectName;
 
-    GameLinks(PluginContext ctx, String version) {
-        this(ctx, version, GameInstance.defaultFolder());
+    GameLinks(PluginContext ctx, String version, Prefs prefs) {
+        this(ctx, version, GameInstance.defaultFolder(), prefs);
     }
 
-    GameLinks(PluginContext ctx, String version, Path folder) {
+    GameLinks(PluginContext ctx, String version, Path folder, Prefs prefs) {
         this.ctx = ctx;
         this.version = version;
         this.folder = folder;
+        this.prefs = prefs;
         liveDebounce.setOnFinished(e -> {
-            if (live) send(false, null);
+            if (prefs.live) send(false, null);
         });
         ctx.on(SceneEvent.BlocksChanged.class, e -> edited());
         ctx.on(SceneEvent.LayersChanged.class, e -> edited());
@@ -155,27 +153,30 @@ final class GameLinks {
     }
 
     boolean target(GameInstance g) {
-        return !excluded.contains(key(g));
+        return !prefs.excluded.contains(key(g));
     }
 
     void setTarget(GameInstance g, boolean on) {
-        if (on) excluded.remove(key(g));
-        else excluded.add(key(g));
+        boolean changed = on ? prefs.excluded.remove(key(g)) : prefs.excluded.add(key(g));
+        if (changed) prefs.save();
         fire();
     }
 
     boolean live() {
-        return live;
+        return prefs.live;
     }
 
     void setLive(boolean on) {
-        live = on;
+        if (prefs.live != on) {
+            prefs.live = on;
+            prefs.save();
+        }
         if (on) send(false, null);
         fire();
     }
 
     private void edited() {
-        if (live) liveDebounce.playFromStart();
+        if (prefs.live) liveDebounce.playFromStart();
     }
 
     // ---- messages ---------------------------------------------------------------------------------------------------
