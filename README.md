@@ -46,7 +46,7 @@ ones you trust.
 ### Gathering
 
 - **Gathered:** type how many you have in each row: a number, stacks (`10s`), shulker boxes (`2sh`) or a sum (`1sh + 3s + 12`). **✓** marks an item
-  as all gathered and **↺** takes that back. Each row shows what's left, and a bar shows the progress over the whole build.
+  as all gathered and **↺** takes that back. Each row shows what's left with a bar that fills red to green, and a bar shows the progress over the whole build.
 - **Saved per project:** what you've gathered is kept for each project file, and comes back when you open it again.
 - **Filter, hide done, sort** by most left, most needed or name.
 
@@ -66,6 +66,29 @@ Works with the [BlockCompanion](https://github.com/doolecg/BlockCompanion) mod, 
   "not seen for 10 min" when the game hasn't written for 5 minutes. A file caught half-written keeps the last good numbers.
 - The game counts the visible layers of the project, so its numbers line up best with **Where to count: All visible layers**.
 - Without BlockCompanion, or with **Not linked**, everything works as before.
+
+### Live link to the game
+
+With [BlockCompanion](https://github.com/doolecg/BlockCompanion) 0.1.0 or later, the **Game link** section of the Materials
+panel lists every BlockCompanion game and server on this computer: **active** (green) while it runs, **disconnected** (grey)
+for a day or two after it closes. Resource Tracker connects to active ones by itself.
+
+- **Send to game:** tick the games your project goes to and press **Send to game**. It appears in front of you in the game;
+  a server adds it to its shared schematics. Also in **Plugins › Send project to the game**.
+- **Live:** every change you make here reaches the ticked games a moment later, so the ghosts follow your edits.
+- **Grab from the game:** BlockCompanion's **Grab from BD** button asks for the open project; Resource Tracker answers even
+  while the panel is closed.
+- **Linked chests:** chests you link in the game (sneak and right-click them with the stick) count as gathered, and each
+  row says how many are in chests.
+- **Install mod…:** puts the latest BlockCompanion release into a game's `mods` folder (a Paper server's `plugins`), the
+  jar for its loader and Minecraft version, and removes older BlockCompanion jars there. Pick a game from the list or
+  another game folder. Restart the game afterwards.
+- **Use its textures:** shows blocks with the resource packs of the game selected in the list, and its server's pack (needs
+  BlockDesigner 0.4.24 or later).
+- **Refresh** (↻) looks for games again, re-reads what they report and counts again.
+
+The games are found through small files in `<your user folder>\.blockcompanion\instances`, and the connection only
+listens on this computer.
 
 ### Copy and export
 
@@ -121,7 +144,7 @@ The tests cover the plugin's logic that runs without the app, against the API ja
 
 | Path | What it does |
 |---|---|
-| `src/main/java` | The plugin's code: `Items` (blocks and entities to items), `Tally` (counting a scope), `Gathered` (saved progress and game link), `GameProgress` and `ProgressFolder` (BlockCompanion's progress files), the panel |
+| `src/main/java` | The plugin's code: `Items` (blocks and entities to items), `Tally` (counting a scope), `Gathered` (saved progress and game link), `GameProgress` and `ProgressFolder` (BlockCompanion's progress files), `GameInstance`, `GameConnection` and `GameLinks` (the live link), `ModInstaller` (installing BlockCompanion), the panel |
 | `src/main/resources/blockdesigner-plugin.json` | The manifest BlockDesigner reads: id, name, version, main class, API level |
 | `src/test/java` | Tests |
 | `libs/` | The BlockDesigner plugin API jars it compiles against |

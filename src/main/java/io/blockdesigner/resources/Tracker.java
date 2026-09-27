@@ -13,6 +13,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Optional;
 import java.util.zip.ZipFile;
 
@@ -33,6 +34,8 @@ final class Tracker {
     private List<Tally.Need> needs = List.of();
     private ProgressFolder.Snapshot game = ProgressFolder.Snapshot.NONE;
     private GameProgress linked;
+    /** Items in the linked chests of the connected games (BlockCompanion), by item id. */
+    private Map<String, Long> chests = Map.of();
 
     Tracker(PluginContext ctx) {
         this.ctx = ctx;
@@ -90,6 +93,29 @@ final class Tracker {
         };
     }
 
+    /** What the games' linked chests hold now. */
+    void setChests(Map<String, Long> items) {
+        chests = Map.copyOf(items);
+    }
+
+    /** How many of the item the linked chests hold. */
+    long chests(String item) {
+        return chests.getOrDefault(item, 0L);
+    }
+
+    boolean hasChests() {
+        return !chests.isEmpty();
+    }
+
+    /** The open project's name as BlockCompanion shows it, or null for a new project. */
+    String projectName() {
+        return projectName;
+    }
+
+    Optional<Path> project() {
+        return project;
+    }
+
     /** How many of the item are placed in the linked build (0 when none is linked). */
     long placed(String item) {
         return linked == null ? 0 : linked.placed(item);
@@ -141,8 +167,9 @@ final class Tracker {
         return needs;
     }
 
+    /** Left to get: needed less placed, gathered and what the linked chests hold. */
     long left(Tally.Need n) {
-        return left(n.count(), placed(n.item()), gathered.get(n.item()));
+        return left(n.count(), placed(n.item()), gathered.get(n.item()) + chests(n.item()));
     }
 
     /**
@@ -161,6 +188,11 @@ final class Tracker {
     /** What "gathered all of it" sets: whatever isn't placed yet. */
     static long rest(long needed, long placed) {
         return Math.max(0, needed - Math.max(0, placed));
+    }
+
+    /** What "gathered all of it" sets when chests hold some: whatever isn't placed or in the chests. */
+    static long rest(long needed, long placed, long inChests) {
+        return Math.max(0, needed - Math.max(0, placed) - Math.max(0, inChests));
     }
 
     void setGathered(String item, long n) {
@@ -201,6 +233,7 @@ final class Tracker {
             String st = Items.stacks(left, n.item());
             if (!st.equals(String.format("%,d", left))) b.append(" (").append(st).append(')');
             if (linked != null) b.append(" · ").append(String.format("%,d", placed(n.item()))).append(" placed");
+            if (chests(n.item()) > 0) b.append(" · ").append(String.format("%,d", chests(n.item()))).append(" in chests");
             b.append('\n');
         }
         return b.toString();
@@ -208,14 +241,16 @@ final class Tracker {
 
     /** The list as CSV: item, name, needed, placed (when linked to the game), gathered, left, as stacks. */
     String csv() {
-        boolean game = linked != null;
-        StringBuilder b = new StringBuilder(game ? "item,name,needed,placed,gathered,left,left as stacks\n"
-                : "item,name,needed,gathered,left,left as stacks\n");
+        boolean game = linked != null, withChests = hasChests();
+        StringBuilder b = new StringBuilder("item,name,needed," + (game ? "placed," : "") + "gathered," + (withChests ? "in chests," : "")
+                + "left,left as stacks\n");
         for (Tally.Need n : needs) {
             long have = gathered.get(n.item()), left = left(n);
             b.append(n.item()).append(',').append(quote(name(n.item()))).append(',').append(n.count()).append(',');
             if (game) b.append(placed(n.item())).append(',');
-            b.append(have).append(',').append(left).append(',').append(quote(Items.stacks(left, n.item()))).append('\n');
+            b.append(have).append(',');
+            if (withChests) b.append(chests(n.item())).append(',');
+            b.append(left).append(',').append(quote(Items.stacks(left, n.item()))).append('\n');
         }
         return b.toString();
     }

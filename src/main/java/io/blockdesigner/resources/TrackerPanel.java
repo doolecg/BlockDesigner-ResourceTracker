@@ -18,7 +18,6 @@ import javafx.scene.control.ComboBox;
 import javafx.scene.control.Label;
 import javafx.scene.control.ListCell;
 import javafx.scene.control.ListView;
-import javafx.scene.control.ProgressBar;
 import javafx.scene.control.TextField;
 import javafx.scene.control.ToggleButton;
 import javafx.scene.control.Tooltip;
@@ -49,8 +48,9 @@ import java.util.concurrent.TimeUnit;
 
 /**
  * The Resource Tracker panel: every item the build needs, how many are placed in the game (when linked to a
- * BlockCompanion build), how many you've gathered (typed in, or ticked done) and what's left, with an overall progress
- * bar. It recounts as the build changes, while it's on screen, and watches the game's progress folder.
+ * BlockCompanion build), how many you've gathered (typed in, or ticked done), how many the game's linked chests hold,
+ * and what's left, each with a bar that fills red to green, and an overall bar. It recounts as the build changes, while
+ * it's on screen, and watches the game's progress folder. The Game link section lists the games and sends projects.
  */
 final class TrackerPanel implements PluginPanel {
     private enum Sort {
@@ -69,6 +69,9 @@ final class TrackerPanel implements PluginPanel {
     }
 
     private final Tracker tracker;
+    private final GameLinks links;
+    private GameLinkPane linkPane;
+    private final GameLinks.Listener linksChanged = this::linksChanged;
     private final List<Subscription> subscriptions = new ArrayList<>();
     private final Map<String, Image> icons = new HashMap<>();
     private final ObservableList<Tally.Need> rows = FXCollections.observableArrayList();
@@ -79,7 +82,7 @@ final class TrackerPanel implements PluginPanel {
     private TextField search;
     private ToggleButton hideDone;
     private ComboBox<Sort> sort;
-    private ProgressBar progress;
+    private GradientBar progress;
     private Label progressText;
     private ListView<Tally.Need> list;
     private ComboBox<Choice> gameLink;
@@ -96,8 +99,9 @@ final class TrackerPanel implements PluginPanel {
         }
     }
 
-    TrackerPanel(Tracker tracker) {
+    TrackerPanel(Tracker tracker, GameLinks links) {
         this.tracker = tracker;
+        this.links = links;
     }
 
     @Override
@@ -153,7 +157,10 @@ final class TrackerPanel implements PluginPanel {
             tracker.mobs = b;
             refresh();
         });
-        HBox top = new HBox(8, scope, mobs);
+        Button refreshAll = new Button("↻");
+        refreshAll.setTooltip(new Tooltip("Refresh: count again, look at the game's progress and chests again"));
+        refreshAll.setOnAction(e -> refreshAll());
+        HBox top = new HBox(8, scope, mobs, refreshAll);
         top.setAlignment(Pos.CENTER_LEFT);
 
         Label gameHeader = new Label("Game progress");
@@ -194,7 +201,7 @@ final class TrackerPanel implements PluginPanel {
         HBox filters = new HBox(6, search, hideDone, sort);
         filters.setAlignment(Pos.CENTER_LEFT);
 
-        progress = new ProgressBar(0);
+        progress = new GradientBar(8);
         progress.setMaxWidth(Double.MAX_VALUE);
         progressText = new Label();
         muted(progressText);
@@ -220,7 +227,10 @@ final class TrackerPanel implements PluginPanel {
         HBox.setHgrow(grow, Priority.ALWAYS);
         HBox buttons = new HBox(6, copy, csv, grow, reset);
 
-        VBox root = new VBox(8, top, game, filters, progress, progressText, list, buttons);
+        linkPane = new GameLinkPane(ctx, links, this::refreshAll);
+        links.addListener(linksChanged);
+        tracker.setChests(links.chests());
+        VBox root = new VBox(8, top, game, linkPane.create(), filters, progress, progressText, list, buttons);
         root.setPadding(new Insets(10));
         // A first look at the game straight away (a few small files), then the watch keeps it current.
         tracker.gameScanned(tracker.progressFolder.scan());
@@ -235,6 +245,8 @@ final class TrackerPanel implements PluginPanel {
         disposed = true;
         subscriptions.forEach(Subscription::cancel);
         subscriptions.clear();
+        links.removeListener(linksChanged);
+        if (linkPane != null) linkPane.dispose();
         if (debounce != null) debounce.stop();
         if (watcher != null) watcher.shutdownNow();
         watcher = null;
@@ -310,6 +322,24 @@ final class TrackerPanel implements PluginPanel {
         gameStatus.setText(text);
     }
 
+    /** The games reported something: their chests may hold different things now. */
+    private void linksChanged() {
+        var now = links.chests();
+        if (tracker.hasChests() || !now.isEmpty()) {
+            tracker.setChests(now);
+            if (list != null) show();
+        }
+    }
+
+    /** The Refresh button: the games, the progress folder and the count, all looked at again. */
+    private void refreshAll() {
+        links.refresh();
+        tracker.gameScanned(tracker.progressFolder.scan());
+        tracker.setChests(links.chests());
+        updateChoices();
+        refresh();
+    }
+
     private void changed() {
         stale = true;
         if (panel != null && panel.isShowing()) debounce.playFromStart();
@@ -345,10 +375,11 @@ final class TrackerPanel implements PluginPanel {
         shown.sort(order.thenComparing(Tally.Need::item));
         rows.setAll(shown);
         int kinds = tracker.needs().size();
-        progress.setProgress(needed == 0 ? 0 : (double) have / needed);
+        progress.setValue(needed == 0 ? 0 : (double) have / needed);
         progressText.setText(kinds == 0
                 ? (tracker.scope == Tally.Scope.SELECTION && ctx.selection().isEmpty() ? "Select some blocks to count them" : "Nothing to count")
-                : String.format("%,d of %,d items %s (%d%%) · %d of %d kinds done", have, needed, game ? "placed or gathered" : "gathered",
+                : String.format("%,d of %,d items %s (%d%%) · %d of %d kinds done", have, needed,
+                game ? (tracker.hasChests() ? "placed, gathered or in chests" : "placed or gathered") : tracker.hasChests() ? "gathered or in chests" : "gathered",
                 needed == 0 ? 0 : Math.round(100.0 * have / needed), done, kinds));
         int left = kinds - done;
         panel.setBadge(left == 0 ? null : Integer.toString(left));
@@ -392,6 +423,7 @@ final class TrackerPanel implements PluginPanel {
     private final class Row extends ListCell<Tally.Need> {
         private final ImageView iv = new ImageView();
         private final Label name = new Label(), meta = new Label();
+        private final GradientBar bar = new GradientBar(5);
         private final TextField have = new TextField();
         private final Button done = new Button("✓");
         private final HBox root;
@@ -406,7 +438,8 @@ final class TrackerPanel implements PluginPanel {
             name.setMinWidth(0);
             meta.setMinWidth(0);
             muted(meta);
-            VBox text = new VBox(0, name, meta);
+            bar.setMaxWidth(Double.MAX_VALUE);
+            VBox text = new VBox(1, name, meta, bar);
             text.setMinWidth(0);
             text.setMaxWidth(Double.MAX_VALUE);
             HBox.setHgrow(text, Priority.ALWAYS);
@@ -427,7 +460,8 @@ final class TrackerPanel implements PluginPanel {
             done.setOnAction(e -> {
                 if (bound == null) return;
                 // All of what isn't placed in the game yet (all of it when not linked).
-                tracker.setGathered(bound.item(), tracker.left(bound) == 0 ? 0 : Tracker.rest(bound.count(), tracker.placed(bound.item())));
+                tracker.setGathered(bound.item(), tracker.left(bound) == 0 ? 0
+                        : Tracker.rest(bound.count(), tracker.placed(bound.item()), tracker.chests(bound.item())));
                 show();
             });
             root = new HBox(8, iv, text, have, done);
@@ -478,6 +512,12 @@ final class TrackerPanel implements PluginPanel {
                         n.count(), placed, got, l));
                 have.getTooltip().setText("How many you have and haven't placed yet: a number, stacks (10s), shulker boxes (2sh), or a sum (1sh + 3s + 12)");
             }
+            long inChests = tracker.chests(n.item());
+            if (inChests > 0) {
+                meta.setText(meta.getText() + String.format(" · %,d in chests", inChests));
+                rowTip.setText(rowTip.getText() + String.format("%nIn your linked chests in the game: %,d (counts as gathered).", inChests));
+            }
+            bar.setValue(n.count() == 0 ? 1 : (n.count() - l) / (double) n.count());
             meta.setStyle(l == 0 ? "-fx-text-fill: -color-success-fg; -fx-font-size: 11px;" : "-fx-text-fill: -color-fg-muted; -fx-font-size: 11px;");
             have.setText(got == 0 ? "" : format(got));
             done.setDisable(allPlaced);

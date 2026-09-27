@@ -1,3 +1,24 @@
+# Resource Tracker 1.2.0
+
+A live link to the game: send your project into Minecraft, have the game follow every change you make, and count what your chests in the game hold. It works with BlockCompanion 0.1.0 or later.
+
+**Needs BlockDesigner 0.4.17 or later** (plugin API 5). **Use its textures** needs BlockDesigner 0.4.24 or later; on older versions it says so and everything else works.
+
+## New
+- **Game link** in the Materials panel: every BlockCompanion game and server on this computer, with a green dot while it runs and grey once it's closed. Tick the ones your projects go to.
+- **Send to game:** the open project appears in front of you in the game. A server on the same computer adds it to its shared schematics instead. Also in the Plugins menu as **Send project to the game**.
+- **Live:** switch it on and every change you make here reaches the game a moment later, so the ghosts follow your edits.
+- **Grab from the game:** BlockCompanion's **Grab from BD** button asks for the open project, and Resource Tracker sends it, even while the Materials panel is closed.
+- **Linked chests count as gathered:** chests you link in the game with BlockCompanion's stick count towards what you have. Each row says how many are in chests, and **Copy list** and **Save CSV…** include them.
+- **Install mod…** puts the latest BlockCompanion into a game's `mods` folder (or a Paper server's `plugins`), picking the jar for its loader and Minecraft version. It works for any game in the list, or a game folder you choose.
+- **Use its textures** shows blocks here with the resource packs of the game selected in the list, and the pack its server sends.
+- **Refresh** (↻ next to the scope) looks for games again, re-reads their progress and chests, and counts again.
+
+## Changed
+- Each item's bar fills red, orange, yellow, green from left to right as the item gets covered, and so does the bar over the whole build.
+
+---
+
 # Resource Tracker 1.1.0
 
 Blocks you place in the game with the BlockCompanion mod now count as done. The Materials panel links the project to its build in the game, shows how many of each item are placed, and keeps up while you build.
