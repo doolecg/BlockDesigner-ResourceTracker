@@ -50,10 +50,28 @@ ones you trust.
 - **Saved per project:** what you've gathered is kept for each project file, and comes back when you open it again.
 - **Filter, hide done, sort** by most left, most needed or name.
 
+### Game progress
+
+Works with the [BlockCompanion](https://github.com/doolecg/BlockCompanion) mod, which writes how far a build is in the game to
+`<your user folder>\.blockcompanion\progress` while you build.
+
+- **Linked automatically:** the **Game progress** picker links the project to the build in the game whose project name is the
+  project's name (or whose schematic file name is the project file's name), ignoring case. If there are several (the project
+  loaded more than once), the most recently updated wins. Pick another build or **Not linked** instead; the choice is saved
+  for each project.
+- **Placed counts as done:** each row shows how many are **placed** in the game, and an item with all of it placed is done by
+  itself. What's left is `needed − placed − gathered`, so **Gathered** now means what you have in hand and haven't placed yet
+  (the row's tooltip spells it out). **✓** fills in just what isn't placed. The progress bar counts placed and gathered.
+- **Live:** it looks at the folder every 2 seconds and shows "In game: 35% built · 9,313 blocks left · updated 5 s ago", or
+  "not seen for 10 min" when the game hasn't written for 5 minutes. A file caught half-written keeps the last good numbers.
+- The game counts the visible layers of the project, so its numbers line up best with **Where to count: All visible layers**.
+- Without BlockCompanion, or with **Not linked**, everything works as before.
+
 ### Copy and export
 
 - **Copy list** puts what's left on the clipboard as text ("Oak Planks: 640 (10 stacks)"); **Save CSV…** writes needed, gathered and left for every
-  item as a spreadsheet. **Plugins › Copy materials list** copies it without opening the panel.
+  item as a spreadsheet. When the project is linked to the game, both include how many are placed. **Plugins › Copy materials list** copies it
+  without opening the panel.
 
 ### Entities
 
@@ -103,7 +121,7 @@ The tests cover the plugin's logic that runs without the app, against the API ja
 
 | Path | What it does |
 |---|---|
-| `src/main/java` | The plugin's code: `Items` (blocks and entities to items), `Tally` (counting a scope), `Gathered` (saved progress), the panel |
+| `src/main/java` | The plugin's code: `Items` (blocks and entities to items), `Tally` (counting a scope), `Gathered` (saved progress and game link), `GameProgress` and `ProgressFolder` (BlockCompanion's progress files), the panel |
 | `src/main/resources/blockdesigner-plugin.json` | The manifest BlockDesigner reads: id, name, version, main class, API level |
 | `src/test/java` | Tests |
 | `libs/` | The BlockDesigner plugin API jars it compiles against |

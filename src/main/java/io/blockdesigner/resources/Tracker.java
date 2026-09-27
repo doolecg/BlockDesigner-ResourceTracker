@@ -5,35 +5,115 @@ import io.blockdesigner.core.model.Box;
 import io.blockdesigner.core.model.Layer;
 import io.blockdesigner.plugin.PluginContext;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
+
 import java.io.IOException;
+import java.io.InputStream;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Locale;
 import java.util.Optional;
+import java.util.zip.ZipFile;
 
 /**
- * The tracker's state, shared by its panel and menu entries: where it counts, what the build needs there, and what
- * has been gathered for the open project.
+ * The tracker's state, shared by its panel and menu entries: where it counts, what the build needs there, what has
+ * been gathered for the open project, and what is placed in the game (from the BlockCompanion build it's linked to).
  */
 final class Tracker {
+    private static final ObjectMapper JSON = new ObjectMapper();
+
     private final PluginContext ctx;
     final Gathered gathered;
+    final ProgressFolder progressFolder;
     Tally.Scope scope = Tally.Scope.VISIBLE;
     boolean mobs;
     private Optional<Path> project = Optional.empty();
+    private String projectName;
     private List<Tally.Need> needs = List.of();
+    private ProgressFolder.Snapshot game = ProgressFolder.Snapshot.NONE;
+    private GameProgress linked;
 
     Tracker(PluginContext ctx) {
         this.ctx = ctx;
         this.gathered = new Gathered(ctx.dataFolder());
+        this.progressFolder = new ProgressFolder(ProgressFolder.defaultFolder());
         gathered.open(project);
     }
 
-    /** Another project was opened (or a new one started): its gathered counts come back. */
+    /** Another project was opened (or a new one started): its gathered counts and game link come back. */
     void projectOpened(Optional<Path> file) {
         project = file;
+        projectName = file.map(Tracker::projectName).orElse(null);
         gathered.open(file);
+        resolve();
+    }
+
+    // --- The game (BlockCompanion's progress files) ---
+
+    /** A new look at the progress folder (on the JavaFX thread). */
+    void gameScanned(ProgressFolder.Snapshot snapshot) {
+        game = snapshot;
+        resolve();
+    }
+
+    ProgressFolder.Snapshot game() {
+        return game;
+    }
+
+    /** The build in the game this project is linked to, or null. */
+    GameProgress linked() {
+        return linked;
+    }
+
+    Gathered.Link link() {
+        return gathered.link();
+    }
+
+    /** The build that would be linked automatically, if any. */
+    Optional<GameProgress> autoMatch() {
+        return ProgressFolder.match(game.builds(), projectName, project.map(p -> p.getFileName().toString()).orElse(null));
+    }
+
+    void setLink(Gathered.Link link) {
+        gathered.setLink(link);
+        save();
+        resolve();
+    }
+
+    private void resolve() {
+        Gathered.Link l = gathered.link();
+        linked = switch (l.mode()) {
+            case OFF -> null;
+            case FILE -> game.byFileName(l.file()).orElse(null);
+            case AUTO -> autoMatch().orElse(null);
+        };
+    }
+
+    /** How many of the item are placed in the linked build (0 when none is linked). */
+    long placed(String item) {
+        return linked == null ? 0 : linked.placed(item);
+    }
+
+    /**
+     * The name BlockCompanion shows for a project file: the {@code name} in a {@code .bdproj}'s {@code project.json},
+     * else the file name without its extension.
+     */
+    static String projectName(Path file) {
+        String fileName = file.getFileName().toString();
+        int dot = fileName.lastIndexOf('.');
+        String stem = dot > 0 ? fileName.substring(0, dot) : fileName;
+        if (!fileName.toLowerCase(Locale.ROOT).endsWith(".bdproj")) return stem;
+        try (ZipFile zip = new ZipFile(file.toFile())) {
+            var entry = zip.getEntry("project.json");
+            if (entry == null) return stem;
+            try (InputStream in = zip.getInputStream(entry)) {
+                String name = JSON.readTree(in).path("name").asText("");
+                return name.isBlank() ? stem : name.strip();
+            }
+        } catch (IOException | RuntimeException e) {
+            return stem;
+        }
     }
 
     /** Counts again what the build needs in the current scope. */
@@ -62,7 +142,25 @@ final class Tracker {
     }
 
     long left(Tally.Need n) {
-        return Math.max(0, n.count() - gathered.get(n.item()));
+        return left(n.count(), placed(n.item()), gathered.get(n.item()));
+    }
+
+    /**
+     * What is left to get: {@code max(0, needed - placed - gathered)}. Gathered means in hand and not placed yet, so
+     * placed and gathered never count the same item twice.
+     */
+    static long left(long needed, long placed, long gathered) {
+        return Math.max(0, needed - Math.max(0, placed) - Math.max(0, gathered));
+    }
+
+    /** How much of the item is covered, placed or gathered, capped at what is needed (for the progress bar). */
+    static long covered(long needed, long placed, long gathered) {
+        return needed - left(needed, placed, gathered);
+    }
+
+    /** What "gathered all of it" sets: whatever isn't placed yet. */
+    static long rest(long needed, long placed) {
+        return Math.max(0, needed - Math.max(0, placed));
     }
 
     void setGathered(String item, long n) {
@@ -102,18 +200,22 @@ final class Tracker {
             b.append(name(n.item())).append(": ").append(String.format("%,d", left));
             String st = Items.stacks(left, n.item());
             if (!st.equals(String.format("%,d", left))) b.append(" (").append(st).append(')');
+            if (linked != null) b.append(" · ").append(String.format("%,d", placed(n.item()))).append(" placed");
             b.append('\n');
         }
         return b.toString();
     }
 
-    /** The list as CSV: item, name, needed, gathered, left, as stacks. */
+    /** The list as CSV: item, name, needed, placed (when linked to the game), gathered, left, as stacks. */
     String csv() {
-        StringBuilder b = new StringBuilder("item,name,needed,gathered,left,left as stacks\n");
+        boolean game = linked != null;
+        StringBuilder b = new StringBuilder(game ? "item,name,needed,placed,gathered,left,left as stacks\n"
+                : "item,name,needed,gathered,left,left as stacks\n");
         for (Tally.Need n : needs) {
             long have = gathered.get(n.item()), left = left(n);
-            b.append(n.item()).append(',').append(quote(name(n.item()))).append(',').append(n.count()).append(',').append(have)
-                    .append(',').append(left).append(',').append(quote(Items.stacks(left, n.item()))).append('\n');
+            b.append(n.item()).append(',').append(quote(name(n.item()))).append(',').append(n.count()).append(',');
+            if (game) b.append(placed(n.item())).append(',');
+            b.append(have).append(',').append(left).append(',').append(quote(Items.stacks(left, n.item()))).append('\n');
         }
         return b.toString();
     }

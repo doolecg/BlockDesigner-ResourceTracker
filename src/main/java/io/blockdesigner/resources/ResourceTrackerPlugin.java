@@ -19,6 +19,7 @@ public final class ResourceTrackerPlugin implements BlockDesignerPlugin {
         ctx.on(SceneEvent.ProjectOpened.class, e -> tracker.projectOpened(e.file()));
         ctx.registerPanel(new TrackerPanel(tracker));
         ctx.registerAction(new PluginAction("Copy materials list", "Copies what is left to gather as text (what the Materials panel counts)", () -> {
+            tracker.gameScanned(tracker.progressFolder.scan());   // what is placed in the game, if linked
             tracker.recount();
             ClipboardContent c = new ClipboardContent();
             c.putString(tracker.text());
