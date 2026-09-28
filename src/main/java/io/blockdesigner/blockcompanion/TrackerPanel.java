@@ -183,7 +183,7 @@ final class TrackerPanel implements PluginPanel {
         list = new ItemList<Tally.Need>().empty(empty);
         list.setItems(rows);
         list.setCellFactory(v -> new Row());
-        Section items = new Section("Resource Tracker", search, filters).grow(list);
+        Section items = new Section("Materials", search, filters).grow(list);
 
         // How far along, at the bottom.
         progress = new GradientBar(8);

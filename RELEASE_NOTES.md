@@ -1,3 +1,14 @@
+# BlockCompanion Plugin 1.6.1
+
+The Materials page still had its old "Resource Tracker" heading above the item list. It's now just **Materials**, like the rest of the plugin's plain section headings.
+
+**Needs BlockDesigner 0.4.26 or later** (plugin API 7).
+
+## Fixed
+- **Leftover old name:** the Materials tab's item list was headed "Resource Tracker". It now says **Materials**.
+
+---
+
 # BlockCompanion Plugin 1.6.0
 
 Resource Tracker is now called the **BlockCompanion Plugin**, after the Minecraft mod it links BlockDesigner to. It updates to the new name by itself, and everything you saved (what you've gathered, saved games, your settings and keys) stays.
