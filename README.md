@@ -2,11 +2,11 @@
   <img src="docs/images/logo.png" alt="BlockDesigner logo" width="128" height="128">
 </p>
 
-<h1 align="center">Resource Tracker</h1>
+<h1 align="center">BlockCompanion Plugin</h1>
 
 <p align="center">
-  The materials a build needs as the items you'd gather in survival, in stacks and shulker boxes,<br>
-  what you have gathered so far and what is left, saved for each project.
+  Links BlockDesigner to BlockCompanion, the Minecraft mod: send your project into the game and edit builds from it.<br>
+  Plus the materials a build needs as the items you'd gather in survival, what you have gathered and what is left.
 </p>
 
 <p align="center">
@@ -19,8 +19,10 @@
 
 ---
 
-Resource Tracker is a plugin for [BlockDesigner](https://github.com/doolecg/BlockDesigner), the Windows editor for Minecraft builds. It is released
-on its own, separately from the app. It needs **BlockDesigner 0.4.26 or later** (plugin API 7).
+BlockCompanion Plugin is a plugin for [BlockDesigner](https://github.com/doolecg/BlockDesigner), the Windows editor for Minecraft builds, and
+BlockDesigner's side of [BlockCompanion](https://github.com/doolecg/BlockCompanion). It was called **Resource Tracker** before 1.6.0; an
+installed copy updates to the new name by itself and keeps everything you saved. It is released on its own, separately from the app. It
+needs **BlockDesigner 0.4.26 or later** (plugin API 7).
 
 **Contents:** [Download](#download-and-install) · [Features](#features) · [Building from source](#building-from-source) · [Project layout](#project-layout)
 
@@ -30,6 +32,8 @@ Get the latest version from the [releases page](https://github.com/doolecg/Block
 
 1. Download `resource-tracker-<version>.jar`.
 2. In BlockDesigner open **Plugins (puzzle icon) › Manage plugins… › Install…** and pick the jar.
+
+Newer versions of BlockDesigner install it for you on their first start, switched on. If you uninstall it, it stays uninstalled.
 
 It is on straight away, with its own tab on the right. You can switch it off, reload or uninstall it in the same window, and it
 updates itself (Plugins › Manage plugins… › Update plugins automatically). Plugins run with the same access as BlockDesigner itself, so only install
@@ -79,7 +83,7 @@ The page's button shows how many kinds are left to gather.
 Everything to do with the [BlockCompanion](https://github.com/doolecg/BlockCompanion) mod (0.1.0 or later), from top to bottom:
 
 - **Games:** every BlockCompanion game and server running on this computer, with its version, loader, what it shows and
-  whether it is connected. Resource Tracker connects to them by itself. A game leaves the list when it disconnects, unless
+  whether it is connected. The plugin connects to them by itself. A game leaves the list when it disconnects, unless
   you **save** it (the save button on its row): saved games stay, **disconnected** (grey), until you unsave them. Tick the games your project goes to. The refresh button looks for games again,
   re-reads what they report and counts again; **Use its textures** shows blocks with the resource packs of the game selected in the list, and its server's pack
   (needs BlockDesigner 0.4.24 or later).
@@ -97,7 +101,7 @@ Everything to do with the [BlockCompanion](https://github.com/doolecg/BlockCompa
   button, even before you open the page.
 
 Live, the ticks and the saved games are kept. **Grab from the game:** BlockCompanion's **Grab from BD** button asks for the open project;
-Resource Tracker answers even while the panel is closed.
+the plugin answers even while the panel is closed.
 
 #### Game progress
 
@@ -180,7 +184,7 @@ The tests cover the plugin's logic that runs without the app, against the API ja
 | Path | What it does |
 |---|---|
 | `src/main/java` | The plugin's code: `Items` (blocks and entities to items), `Tally` (counting a scope), `Gathered` (saved progress and game link), `GameProgress` and `ProgressFolder` (BlockCompanion's progress files), `GameInstance`, `GameConnection` and `GameLinks` (the live link), `ModInstaller` (installing BlockCompanion), `Prefs` (the saved page state), `TrackerSession` (what both pages share: the count, the link, the look at the games every 2 seconds, the page's status dot), `LinkStatus`, the pages (`TrackerPanel`: Materials; `GameLinkPanel` and `GameLinkPane`: BlockCompanion) |
-| `src/main/resources/blockdesigner-plugin.json` | The manifest BlockDesigner reads: id, name, version, main class, API level |
+| `src/main/resources/blockdesigner-plugin.json` | The manifest BlockDesigner reads: id, name, version, main class, API level. The id stays `resource-tracker` (and the jar `resource-tracker-<version>.jar`) from the plugin's old name, so installed copies keep updating and keep their data |
 | `src/test/java` | Tests |
 | `libs/` | The BlockDesigner plugin API jars it compiles against |
 

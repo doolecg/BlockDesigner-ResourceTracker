@@ -1,10 +1,10 @@
 {
   "id": "resource-tracker",
-  "name": "Resource Tracker",
+  "name": "BlockCompanion Plugin",
   "version": "@VERSION@",
   "author": "BlockDesigner",
-  "description": "The materials a build needs, as the items you'd gather in survival (stacks and shulker boxes), what you have gathered so far and what is left, saved for each project. Blocks placed in the game with BlockCompanion count as done, and a live link sends your project into the game and follows your edits. Copy or export the list as text or CSV.",
+  "description": "Links BlockDesigner to BlockCompanion, the Minecraft mod: a live link sends your project into the game and follows your edits, games can send builds back to edit, and Install mod puts BlockCompanion into your game. Also the materials a build needs as the items you'd gather in survival (stacks and shulker boxes), what you have gathered and what is left, saved for each project, with blocks placed in the game counting as done. Copy or export the list as text or CSV.",
   "updates": "https://github.com/doolecg/BlockDesigner-ResourceTracker",
-  "main": "io.blockdesigner.resources.ResourceTrackerPlugin",
+  "main": "io.blockdesigner.blockcompanion.BlockCompanionPlugin",
   "api": 7
 }

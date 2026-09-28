@@ -6,6 +6,10 @@ out/
 .kotlin/
 local.properties
 
+# Secrets (API keys): read by the build, never committed
+.env
+.env.*
+
 # AI assistants and coding agents: local config, memory, rules and caches
 .claude/
 CLAUDE.md

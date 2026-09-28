@@ -1,4 +1,4 @@
-// Resource Tracker, a BlockDesigner plugin released on its own. Build it with:  ./gradlew jar
+// BlockCompanion Plugin (formerly Resource Tracker), a BlockDesigner plugin released on its own. Build it with:  ./gradlew jar
 // then install build/libs/resource-tracker-<version>.jar with Plugins > Manage plugins > Install.
 //
 // It compiles against the BlockDesigner plugin API jars in libs/. BlockDesigner provides them, Jackson and JavaFX at
@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "io.blockdesigner.plugins"
-version = "1.5.2"
+version = "1.6.0"
 
 repositories {
     mavenCentral()

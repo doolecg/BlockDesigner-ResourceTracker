@@ -1,3 +1,15 @@
+# BlockCompanion Plugin 1.6.0
+
+Resource Tracker is now called the **BlockCompanion Plugin**, after the Minecraft mod it links BlockDesigner to. It updates to the new name by itself, and everything you saved (what you've gathered, saved games, your settings and keys) stays.
+
+**Needs BlockDesigner 0.4.26 or later** (plugin API 7).
+
+## Changed
+- **New name:** the tab, the Plugins window, its page in Settings and its messages say **BlockCompanion Plugin**. Games connected to it show that name too.
+- **Install mod checks what it downloads:** the BlockCompanion jar must match the size and SHA-256 checksum GitHub publishes for it. If it doesn't, it's thrown away and your mods folder is left as it was.
+
+---
+
 # Resource Tracker 1.5.2
 
 The BlockCompanion page's games list no longer draws its "no game running" message over the text below it.
