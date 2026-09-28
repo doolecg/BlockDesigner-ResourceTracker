@@ -9,7 +9,7 @@ plugins {
 }
 
 group = "io.blockdesigner.plugins"
-version = "1.5.1"
+version = "1.5.2"
 
 repositories {
     mavenCentral()

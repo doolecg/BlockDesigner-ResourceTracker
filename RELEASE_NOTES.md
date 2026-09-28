@@ -1,3 +1,14 @@
+# Resource Tracker 1.5.2
+
+The BlockCompanion page's games list no longer draws its "no game running" message over the text below it.
+
+**Needs BlockDesigner 0.4.26 or later** (plugin API 7).
+
+## Fixed
+- **Games list with no game running:** the "No BlockCompanion game running" message was squeezed into a box three rows tall, so its link icon sat on the box's edge and **Install mod…** hung over the hint below. It now gets the room it needs and the list comes back as soon as a game connects.
+
+---
+
 # Resource Tracker 1.5.1
 
 When Install mod can't replace the old BlockCompanion jar, it now tells you which program is holding it.

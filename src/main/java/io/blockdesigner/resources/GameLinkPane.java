@@ -55,6 +55,7 @@ final class GameLinkPane {
     private final Runnable linkChanged;
     private final ObservableList<GameInstance> items = FXCollections.observableArrayList();
     private ItemList<GameInstance> list;
+    private EmptyState noGames;
     private StatusBadge state;
     private Label stateDetail, chestsText, gameStatus, editNote;
     private Banner banner;
@@ -85,15 +86,17 @@ final class GameLinkPane {
         // Games.
         Button install = Controls.button("Install mod…", "Put the latest BlockCompanion into a game's mods folder (or a Paper server's plugins)",
                 this::install);
-        list = new ItemList<GameInstance>().empty(new EmptyState(Icon.LINK, "No BlockCompanion game running.")
+        // Shown instead of the list while it is empty: a list sized in rows is too short for it as its placeholder.
+        noGames = new EmptyState(Icon.LINK, "No BlockCompanion game running.")
                 .hint("Start Minecraft with the mod, or install it. Saved games stay here when they disconnect.")
-                .action(Controls.button("Install mod…", "Put the latest BlockCompanion into a game's mods folder", this::install)));
+                .action(Controls.button("Install mod…", "Put the latest BlockCompanion into a game's mods folder", this::install));
+        list = new ItemList<>();
         list.setItems(items);
         list.setCellFactory(v -> new Cell());
         list.visibleRows(3, 6);
         textures = Controls.button("Use its textures", "Show blocks here with the selected game's resource packs (its own and its server's)",
                 this::useTextures);
-        Section games = new Section("Games", list,
+        Section games = new Section("Games", noGames, list,
                 Controls.hint("Tick the games your project goes to. Running games connect by themselves; a game leaves the list when it"
                         + " disconnects unless you save it."), textures)
                 .actions(Controls.iconButton(Icon.REFRESH, "Look for games again, ask them for their progress and chests, and count the materials again",
@@ -160,6 +163,8 @@ final class GameLinkPane {
         if (sel != null) items.stream().filter(g -> g.id().equals(sel.id())).findFirst().ifPresent(g -> list.getSelectionModel().select(g));
         else if (!items.isEmpty()) list.getSelectionModel().select(0);
         list.refresh();
+        Controls.show(noGames, items.isEmpty());
+        Controls.show(list, !items.isEmpty());
         textures.setDisable(items.isEmpty());
         Controls.show(textures, !items.isEmpty());
 
